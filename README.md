@@ -2,6 +2,23 @@
 
 SeekSpider is a Scrapy project that is specialized in scraping job listings from SEEK's Australian website (`seek.com.au`). This project is structured to capture a wide array of information concerning job postings, easing the job search for users specifically interested in the Perth, WA area. The primary data points it retrieves include job ID, job title, business name, work type, job description, pay range, suburb, area, the direct URL to the job listing, advertiser ID, and job type.
 
+## Web API Parameters Explanation
+
+The spider makes use of the Seek Job Search API with several query parameters to tailor the search results according to specific needs. Below is a detailed explanation of these parameters used in the spider's query string:
+
+- where: Refers to the  location for the job search. It's set to "All Perth WA" in the current configuration
+- seekSelectAllPages: A boolean parameter that, when set to True, indicates the scraper to consider all available pages of job listings.
+- classification: Each job category on Seek has a unique classification ID. The value `6281` refers to Information & Communication Technology
+- hadPremiumListings: Indicates whether the search results include premium listings. 
+- include: Include search engine optimization data in the response
+- locale: Determines the regional setting of the API. 'en-AU' sets the locale to English - Australia.
+- url_page: Current page number
+- 
+The `params` are converted to a query string by the `urlencode`method which ensures they are properly formatted for the HTTP request. Adjusting these parameters allows for a wide range of searches to collect data that's useful for different users' intents.
+
+These parameters are a crucial part of the spider's functionality as they dictate the scope and specificity of the web scraping task at hand. Users can modify these parameters as per their requirements to collect job listing data relevant to their own specific search criteria.
+
+
 ## Project Components
 
 ### Items
@@ -18,6 +35,8 @@ The heart of the SeekSpider project is the `scrapy.Spider` subclass that defin
 
 `SeekspiderPipeline` is responsible for processing the items scraped by the spider. Once an item has been populated with data by the spider, it is passed to the pipeline, where it establishes a connection to the MySQL database via pymysql and inserts the data into the corresponding table.
 
+
+
 ## Installation
 
 Clone the repository to your local machine.Navigate to the project directory in your terminal.Install the required Python packages listed in `requirements.txt`. You may use pip to install them:
@@ -26,8 +45,6 @@ Clone the repository to your local machine.Navigate to the project directory in 
 ```pip install -r requirements.txt```
 
 Be sure to have MySQL installed and running on your local machine or remote server with the required database and table schema set up.Configure your database settings in `settings_local.py` to point to your MySQL instance.
-
-## Usage
 
 Run the spider using the following command:
 
@@ -60,6 +77,8 @@ params = {
   "locale": "en-AU",
 }
 ```
+
+
 ## Database Schema
 
 Make sure that your MySQL database has a table with the correct schema to store the data. Below is a guideline schema based on the fields defined in the `SeekspiderItem`:
