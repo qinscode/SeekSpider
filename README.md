@@ -1,0 +1,94 @@
+# Seekspider: A Scrapy Project for Job Scraping
+
+SeekSpider is a Scrapy project that is specialized in scraping job listings from SEEK's Australian website (`seek.com.au`). This project is structured to capture a wide array of information concerning job postings, easing the job search for users specifically interested in the Perth, WA area. The primary data points it retrieves include job ID, job title, business name, work type, job description, pay range, suburb, area, the direct URL to the job listing, advertiser ID, and job type.
+
+## Project Components
+
+### Items
+
+The `SeekspiderItem` class is defined as a Scrapy Item. Items provide a means to collect the data scraped by the spiders. The fields collected by this project are:
+
+`job_id`: The unique identifier for the job posting.`job_title`: The title of the job.`business_name`: The name of the business advertising the job.`work_type`: The type of employment (e.g., full-time, part-time).`job_description`: A description of the job and its responsibilities.`pay_range`: The salary or range provided for the position.`suburb`: The suburb where the job is located.`area`: A broader area designation for the job location.`url`: The direct URL to the job listing.`advertiser_id`: The unique identifier for the advertiser of the job.`job_type`: The classification of the job.
+
+### Spider
+
+The heart of the SeekSpider project is the `scrapy.Spider` subclass that defines how job listings are scraped. It constructs the necessary HTTP requests, parses the responses returned from the web server, and extracts the data using selectors to populate `SeekspiderItem` objects.
+
+### Pipeline
+
+`SeekspiderPipeline` is responsible for processing the items scraped by the spider. Once an item has been populated with data by the spider, it is passed to the pipeline, where it establishes a connection to the MySQL database via pymysql and inserts the data into the corresponding table.
+
+## Installation
+
+Clone the repository to your local machine.Navigate to the project directory in your terminal.Install the required Python packages listed in `requirements.txt`. You may use pip to install them:
+
+
+```pip install -r requirements.txt```
+
+Be sure to have MySQL installed and running on your local machine or remote server with the required database and table schema set up.Configure your database settings in `settings_local.py` to point to your MySQL instance.
+
+## Usage
+
+Run the spider using the following command:
+
+`scrapy crawl seek`
+
+Upon execution, the spider will start to navigate through the job listings on SEEK and insert each job's data into the database using the pipeline.
+
+## Configuration
+
+Before running the spider, you will need to create a `settings_local.py` file in your project directory. This file should contain the configuration settings for your database connection. Here is a template for the `settings_local.py`file:
+
+```
+MYSQL_HOST = 'localhost'
+MYSQL_PORT = 3306
+MYSQL_USER = 'MYSQL_USER'
+MYSQL_PASSWORD = 'MYSQL_PASSWORD'
+MYSQL_DATABASE = 'Seek'
+MYSQL_TABLE = 'Jobs_test'`
+```
+
+Make sure that this file is not tracked by version control if it contains sensitive information such as your database password. You can add `settings_local.py` to your `.gitignore` file to prevent it from being committed to your git repository.
+
+You can tweak the crawl parameters like search location, category, and job type in the spider's `params` dictionary. Ensure that these parameters match the expected query parameters of the [seek.com](https://seek.com/).au API.
+
+
+```
+params = {
+  "where": "All Perth WA",
+  "classification": 6281,
+  "locale": "en-AU",
+}
+```
+## Database Schema
+
+Make sure that your MySQL database has a table with the correct schema to store the data. Below is a guideline schema based on the fields defined in the `SeekspiderItem`:
+
+```
+CREATE TABLE jobs (
+  job_id VARCHAR(255) PRIMARY KEY,
+  job_title VARCHAR(255),
+  business_name VARCHAR(255),
+  work_type VARCHAR(255),
+  job_description VARCHAR(255),
+  pay_range VARCHAR(255),
+  suburb VARCHAR(255),
+  area VARCHAR(255),
+  url VARCHAR(255),
+  advertiser_id VARCHAR(255),
+  job_type VARCHAR(255)
+);
+```
+Please include relevant indices based on your query patterns for optimal performance.
+
+## Contributing
+
+Contributions are welcome. Fork the project, make your changes and submit a pull request. For major changes, please open an issue first to discuss what you would like to change.
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
+
+---
+
+This README provides a general overview of the SeekSpider project. You may need to adapt the usage, configuration, and installation instructions to match your specific environment and use case. Ensure all dependencies and environment variables are appropriately managed.
