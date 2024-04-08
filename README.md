@@ -13,7 +13,7 @@ The spider makes use of the Seek Job Search API with several query parameters to
 - include: Include search engine optimization data in the response
 - locale: Determines the regional setting of the API. 'en-AU' sets the locale to English - Australia.
 - url_page: Current page number
-- 
+
 The `params` are converted to a query string by the `urlencode`method which ensures they are properly formatted for the HTTP request. Adjusting these parameters allows for a wide range of searches to collect data that's useful for different users' intents.
 
 These parameters are a crucial part of the spider's functionality as they dictate the scope and specificity of the web scraping task at hand. Users can modify these parameters as per their requirements to collect job listing data relevant to their own specific search criteria.
