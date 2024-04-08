@@ -108,6 +108,7 @@ Contributions are welcome. Fork the project, make your changes and submit a pull
 
 This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
 
----
 
-This README provides a general overview of the SeekSpider project. You may need to adapt the usage, configuration, and installation instructions to match your specific environment and use case. Ensure all dependencies and environment variables are appropriately managed.
+## Acknowledgments
+
+The content for this README was generated with the assistance of Generative AI, ensuring accuracy and efficiency in delivering the information needed to understand and utilize the SeekSpider to its full potential. (I'm not a lazy boy, definitely)
