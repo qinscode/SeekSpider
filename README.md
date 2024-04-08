@@ -64,6 +64,8 @@ Run the spider using the following command:
 
 Upon execution, the spider will start to navigate through the job listings on SEEK and insert each job's data into the database using the pipeline.
 
+**I'm not trying to be lazy, but you can just run `main.py` instead.**
+
 ## Configuration
 
 Before running the spider, you will need to create a `settings_local.py` file in your project directory. This file should contain the configuration settings for your database connection. Here is a template for the `settings_local.py`file:
@@ -123,4 +125,4 @@ This project is licensed under the Apache License 2.0 - see the LICENSE file for
 
 ## Acknowledgments
 
-The content for this README was generated with the assistance of Generative AI, ensuring accuracy and efficiency in delivering the information needed to understand and utilize the SeekSpider to its full potential. (I'm not a lazy boy, definitely)
+The content for this README was generated with the assistance of Generative AI, ensuring accuracy and efficiency in delivering the information needed to understand and utilize the SeekSpider to its full potential. (Again, I'm not a lazy boy, definitely)
