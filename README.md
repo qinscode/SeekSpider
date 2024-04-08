@@ -25,7 +25,19 @@ These parameters are a crucial part of the spider's functionality as they dictat
 
 The `SeekspiderItem` class is defined as a Scrapy Item. Items provide a means to collect the data scraped by the spiders. The fields collected by this project are:
 
-`job_id`: The unique identifier for the job posting.`job_title`: The title of the job.`business_name`: The name of the business advertising the job.`work_type`: The type of employment (e.g., full-time, part-time).`job_description`: A description of the job and its responsibilities.`pay_range`: The salary or range provided for the position.`suburb`: The suburb where the job is located.`area`: A broader area designation for the job location.`url`: The direct URL to the job listing.`advertiser_id`: The unique identifier for the advertiser of the job.`job_type`: The classification of the job.
+| Field Name | Description |
+| --- | --- |
+| job_id | The unique identifier for the job posting. |
+| job_title | The title of the job. |
+| business_name | The name of the business advertising the job. |
+| work_type | The type of employment (e.g., full-time, part-time). |
+| job_description | A description of the job and its responsibilities. |
+| pay_range | The salary or range provided for the position. |
+| suburb | The suburb where the job is located. |
+| area | A broader area designation for the job location. |
+| url | The direct URL to the job listing. |
+| advertiser_id | The unique identifier for the advertiser of the job. |
+| job_type | The classification of the job. |
 
 ### Spider
 
