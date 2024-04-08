@@ -125,4 +125,6 @@ This project is licensed under the Apache License 2.0 - see the LICENSE file for
 
 ## Acknowledgments
 
-The content for this README was generated with the assistance of Generative AI, ensuring accuracy and efficiency in delivering the information needed to understand and utilize the SeekSpider to its full potential. (Again, I'm not a lazy boy, definitely)
+The content for this README was generated with the assistance of Generative AI, ensuring accuracy and efficiency in delivering the information needed to understand and utilize the SeekSpider to its full potential. 
+
+(Again, I'm not a lazy boy, definitely)
