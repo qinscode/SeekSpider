@@ -49,7 +49,7 @@ class SeekspiderPipeline(object):
                 item.get('job_type')
             ))
             self.connection.commit()
-            print(f"Job {item.get('job_id')} was inserted successfully")
+            print(f"Job ID:  {item.get('job_id')}. Job inserted successfully.")
         except Exception as e:
             print(f"An error occurred: {e} for job {item.get('job_id')}")
 
