@@ -64,7 +64,7 @@ Run the spider using the following command:
 
 Upon execution, the spider will start to navigate through the job listings on SEEK and insert each job's data into the database using the pipeline.
 
-**I'm not trying to be lazy, but you can just run `main.py` instead.**
+***I'm not trying to be lazy, but you can just run `main.py` instead.***
 
 ## Configuration
 
