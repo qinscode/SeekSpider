@@ -55,9 +55,9 @@ class SeekSpider(scrapy.Spider):
             seekItem['business_name'] = data['advertiser']['description']
 
 
-            response = requests.get(seekItem['url'])  # 发送请求获取html页面内容
+            response = requests.get(seekItem['url'])
 
-            soup = BeautifulSoup(response.text, 'lxml')  # 解析html页面
+            soup = BeautifulSoup(response.text, 'lxml')
             job_details_div = soup.select_one('div[data-automation="jobAdDetails"]')
             divs = soup.find_all('span', {'class': 'y735df0 _1iz8dgs4y _1iz8dgsr'})
 
