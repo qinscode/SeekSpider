@@ -3,8 +3,10 @@
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
+import random
 from scrapy import signals
-
+from scrapy.downloadermiddlewares.retry import RetryMiddleware
+from scrapy.utils.response import response_status_message
 # useful for handling different item types with a single interface
 from itemadapter import is_item, ItemAdapter
 
@@ -101,3 +103,17 @@ class SeekspiderDownloaderMiddleware:
 
     def spider_opened(self, spider):
         spider.logger.info("Spider opened: %s" % spider.name)
+
+
+
+class CustomRetryMiddleware(RetryMiddleware):
+
+    def process_response(self, request, response, spider):
+        if request.meta.get('dont_retry', False):
+            return response
+        if response.status in [500, 503, 504, 400, 403, 404]:
+            if response.status == 403:
+                spider.logger.warning("You may have been banned. URL: %s" % request.url)
+            reason = response_status_message(response.status)
+            return self._retry(request, reason, spider) or response
+        return response
