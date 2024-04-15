@@ -31,9 +31,28 @@ class SeekSpider(scrapy.Spider):
 
     subclassification_dict = {
         '6282': 'Architects',
-
+        '6283': 'Business/Systems Analysts',
+        '6284': 'Computer Operators',
+        '6285': 'Consultants',
+        '6286': 'Database Development & Administration',
+        '6287': 'Developers/Programmers',
+        '6288': 'Engineering - Hardware',
+        '6289': 'Engineering - Network',
+        '6290': 'Engineering - Software',
+        '6291': 'Help Desk & IT Support',
+        '6292': 'Management',
+        '6293': 'Networks & Systems Administration',
+        '6294': 'Product Management & Development',
+        '6295': 'Programme & Project Management',
+        '6296': 'Sales - Pre & Post',
+        '6297': 'Security',
+        '6298': 'Team Leaders',
+        '6299': 'Technical Writing',
+        '6300': 'Telecommunications',
+        '6301': 'Testing & Quality Assurance',
+        '6302': 'Web Development & Production',
+        '6303': 'Other'
     }
-
     current_subclass = ''
 
     # Use Scrapy's logging system instead of printing to console
