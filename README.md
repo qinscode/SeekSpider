@@ -49,14 +49,14 @@ Ensure you have the following installed on your system:
 
 1. Clone the repository to your local machine.
 
-```
+```shell
 git clone https://github.com/your-username/SeekSpider.git
 cd SeekSpider
 ```
 
 2. Navigate to the project directory in your terminal. Install the required Python packages listed in `requirements.txt`. You may use pip to install them:
 
-```bash
+```shell
 pip install -r requirements.txt
 ```
 
