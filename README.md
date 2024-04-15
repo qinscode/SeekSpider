@@ -14,6 +14,7 @@
   - [Items](#items)
   - [Spider](#spider)
   - [Pipeline](#pipeline)
+  - [Settings](#settings)
 - [Configuration](#configuration)
 - [Database Schema](#database-schema)
 - [Contributing](#contributing)
