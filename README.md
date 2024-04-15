@@ -1,6 +1,4 @@
-Sure, I'll optimize the README for better structure and clarity. Here's an updated version:
-
-# SeekSpider: A Scrapy Project for Job Scraping
+# SeekSpider: A Scrapy Project for Job Crawling
 
 ## Table of Contents
 
