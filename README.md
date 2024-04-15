@@ -56,8 +56,10 @@ The heart of the SeekSpider project is the `scrapy.Spider` subclass that defin
 Clone the repository to your local machine.
 
 
-```git clone https://github.com/your-username/SeekSpider.git
-cd SeekSpider```
+```
+git clone https://github.com/your-username/SeekSpider.git
+cd SeekSpider
+```
 
 Navigate to the project directory in your terminal.Install the required Python packages listed in `requirements.txt`. You may use pip to install them:
 
