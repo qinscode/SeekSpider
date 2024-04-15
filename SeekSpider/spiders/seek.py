@@ -53,6 +53,7 @@ class SeekSpider(scrapy.Spider):
         '6302': 'Web Development & Production',
         '6303': 'Other'
     }
+
     current_subclass = ''
 
     # Use Scrapy's logging system instead of printing to console
