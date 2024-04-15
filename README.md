@@ -56,7 +56,7 @@ cd SeekSpider
 
 2. Navigate to the project directory in your terminal. Install the required Python packages listed in `requirements.txt`. You may use pip to install them:
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
@@ -75,7 +75,7 @@ Be sure to have MySQL installed and running on your local machine or remote serv
 
 Run the spider using the following command:
 
-```
+```bash
 scrapy crawl seek
 ```
 
