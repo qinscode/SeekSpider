@@ -14,6 +14,8 @@ The spider makes use of the Seek Job Search API with several query parameters to
 - locale: Determines the regional setting of the API. 'en-AU' sets the locale to English - Australia.
 - url_page: Current page number
 
+**SEEK HAS 26 PAGES LIMIT WHICH MEANS YOU WON'T GO FURTHER WITH A RESULT MORE THAN 26 PAGES, SO I BREAK THE JOB UP INTO PIECES. THAT'S WHY WE NEED SUBCLASS.**
+
 The `params` are converted to a query string by the `urlencode`method which ensures they are properly formatted for the HTTP request. Adjusting these parameters allows for a wide range of searches to collect data that's useful for different users' intents.
 
 These parameters are a crucial part of the spider's functionality as they dictate the scope and specificity of the web scraping task at hand. Users can modify these parameters as per their requirements to collect job listing data relevant to their own specific search criteria.
@@ -51,7 +53,13 @@ The heart of the SeekSpider project is the `scrapy.Spider` subclass that defin
 
 ## Installation
 
-Clone the repository to your local machine.Navigate to the project directory in your terminal.Install the required Python packages listed in `requirements.txt`. You may use pip to install them:
+Clone the repository to your local machine.
+
+
+```git clone https://github.com/your-username/SeekSpider.git
+cd SeekSpider```
+
+Navigate to the project directory in your terminal.Install the required Python packages listed in `requirements.txt`. You may use pip to install them:
 
 
 ```pip install -r requirements.txt```
