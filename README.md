@@ -130,6 +130,10 @@ The heart of the SeekSpider project is the `scrapy.Spider` subclass that defines
 
 `SeekspiderPipeline` is responsible for processing the items scraped by the spider. Once an item has been populated with data by the spider, it is passed to the pipeline, where it establishes a connection to the MySQL database via pymysql and inserts the data into the corresponding table.
 
+### settings
+I have intentionally slowed down the speed to avoid any ban. If you feel the spider is too slow, please try to increase `CONCURRENT_REQUESTS` and decrease `DOWNLOAD_DELAY`.
+
+
 ## Configuration
 
 Before running the spider, you will need to create a `settings_local.py` file in your project directory. This file should contain the configuration settings for your database connection. Here is a template for the `settings_local.py` file:
