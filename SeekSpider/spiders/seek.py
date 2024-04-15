@@ -13,7 +13,7 @@ class SeekSpider(scrapy.Spider):
     'siteKey': 'AU-Main',
     'sourcesystem': 'houston',
     'where': 'All Sydney NSW',
-    'page': 2,
+    'page': 1,
     'seekSelectAllPages': 'true',
     'classification': '6281',
     'subclassification': '',
