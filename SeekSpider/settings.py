@@ -52,7 +52,6 @@ SPIDER_MIDDLEWARES = {
    'scrapy_fake_useragent.middleware.RandomUserAgentMiddleware': 400,
    'scrapy.downloadermiddlewares.retry.RetryMiddleware': None,
    'SeekSpider.middlewares.CustomRetryMiddleware': 550,
-
 }
 
 
