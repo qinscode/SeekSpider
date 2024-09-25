@@ -12,7 +12,7 @@ class SeekSpider(scrapy.Spider):
     params = {
     'siteKey': 'AU-Main',
     'sourcesystem': 'houston',
-    'where': 'All Sydney NSW',
+    'where': 'All Perth WA',
     'page': 1,
     'seekSelectAllPages': 'true',
     'classification': '6281',
@@ -134,21 +134,35 @@ class SeekSpider(scrapy.Spider):
     def fetch_job_description(self, url):
         response = requests.get(url, headers=self.headers)
         soup = BeautifulSoup(response.text, 'lxml')
-        job_details_div = soup.select_one('div[data-automation="jobAdDetails"]')
-        divs = soup.find_all('span', {'class': 'y735df0 _1iz8dgs4y _1iz8dgsr'})
 
-        suburb = divs[0].get_text()
-        job_type = divs[1].get_text().replace(self.remove_text, '')
-        work_type= divs[2].get_text()
-        pay_range = ''
-        if len(divs) >= 4:
-            pay_range = divs[3].get_text()
-        content = ''
-        for elem in job_details_div.recursiveChildGenerator():
-            if isinstance(elem, str):
-                content += elem.strip() + ' '
 
-        return suburb,job_type,work_type,pay_range,content
+        location = soup.find("span", attrs={"data-automation": "job-detail-location"})
+        location_text = location.text if location else None
+
+        classifications = soup.find("span", attrs={"data-automation": "job-detail-classifications"})
+        classifications_text = classifications.text if classifications else None
+
+        work_type = soup.find("span", attrs={"data-automation": "job-detail-work-type"})
+        work_type_text = work_type.text if work_type else None
+
+        salary = soup.find("span", attrs={"data-automation": "job-detail-salary"})
+        salary_text = salary.text if salary else None
+
+        job_details = soup.find("div", attrs={"data-automation": "jobAdDetails"})
+        content = []
+        full_content = ''
+        if job_details:
+            for elem in job_details.recursiveChildGenerator():
+                if isinstance(elem, str) and elem.strip():
+                    content.append(elem.strip())
+
+            # Join all non-empty strings with a single space
+            full_content = ' '.join(content)
+            print(full_content)
+        else:
+            print("Job details not found")
+
+        return location_text,classifications_text,work_type_text,salary_text,full_content
 
     def parse_advert_details(self, item, advert_details):
         details_mapping = {
