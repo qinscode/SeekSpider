@@ -1,41 +1,59 @@
-import pymysql
+import psycopg2
 from SeekSpider.settings_local import *
 
 class SeekspiderPipeline(object):
 
     def open_spider(self, spider):
-        self.connection = pymysql.connect(host=MYSQL_HOST,
+        self.connection = psycopg2.connect(host=MYSQL_HOST,
                                           user=MYSQL_USER,
                                           password=MYSQL_PASSWORD,
-                                          db=MYSQL_DATABASE,
-                                          charset='utf8mb4')
+                                          database=MYSQL_DATABASE,
+                                          port=MYSQL_PORT)
         self.cursor = self.connection.cursor()
 
     def close_spider(self, spider):
         self.connection.close()
 
     def process_item(self, item, spider):
+        # Check if the job ID already exists in the database
+        check_sql = """
+            SELECT 1 FROM "{}" WHERE "Id" = %s
+        """.format(MYSQL_TABLE)
+        
+        self.cursor.execute(check_sql, (item.get('job_id'),))
+        if self.cursor.fetchone():
+            print(f"Job ID: {item.get('job_id')} already exists. Skipping insertion.")
+            return item
+
+        # Handle empty AdvertiserId
+        advertiser_id = item.get('advertiser_id')
+        if advertiser_id == "":
+            advertiser_id = None
+
         insert_sql = """
-            INSERT INTO {} (
-                job_id, 
-                job_title, 
-                business_name, 
-                work_type, 
-                job_description, 
-                pay_range, 
-                suburb, 
-                area, 
-                url, 
-                advertiser_id, 
-                job_type
+            INSERT INTO "{}" (
+                "Id", 
+                "JobTitle", 
+                "BusinessName", 
+                "WorkType", 
+                "JobDescription", 
+                "PayRange", 
+                "Suburb", 
+                "Area", 
+                "Url", 
+                "AdvertiserId", 
+                "JobType",
+                "CreatedAt",
+                "UpdatedAt",
+                "IsNew"
             ) 
             VALUES (
-                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now(),true
             )
             """.format(MYSQL_TABLE)
 
         try:
-            self.cursor.execute(insert_sql, (
+            params = (
                 item.get('job_id'),
                 item.get('job_title'),
                 item.get('business_name'),
@@ -45,11 +63,12 @@ class SeekspiderPipeline(object):
                 item.get('suburb'),
                 item.get('area'),
                 item.get('url'),
-                item.get('advertiser_id'),
+                advertiser_id,  # Use the modified advertiser_id
                 item.get('job_type')
-            ))
+            )
+            self.cursor.execute(insert_sql, params)
             self.connection.commit()
-            print(f"Job ID:  {item.get('job_id')}. Job inserted successfully.")
+            print(f"Job ID: {item.get('job_id')}. Job inserted successfully.")  # Print the generated UUID
         except Exception as e:
             print(f"An error occurred: {e} for job {item.get('job_id')}")
 
