@@ -61,6 +61,10 @@ class SeekSpider(scrapy.Spider):
         'LOG_LEVEL': 'INFO',
     }
 
+    def __init__(self, *args, **kwargs):
+        super(SeekSpider, self).__init__(*args, **kwargs)
+        self.scraped_job_ids = set()
+
     def start_requests(self):
         self.current_subclass,_ = self.subclassification_dict.popitem()
         self.params['subclassification'] = self.current_subclass
@@ -113,18 +117,19 @@ class SeekSpider(scrapy.Spider):
     def parse_job(self, data):
         item = SeekspiderItem()
         item['job_id'] = data['id']
+        self.scraped_job_ids.add(item['job_id'])
         item['area'] = data.get('area', data['location'])
         item['url'] = self.jd_url + str(data['id'])
         item['advertiser_id'] = data['advertiser']['id']
         item['job_title'] = data['title']
         item['business_name'] = data['advertiser']['description']
         suburb, job_type, work_type, pay_range, content = self.fetch_job_description(item['url'])
-
+        item['posted_date'] = data['listingDate']
         item['suburb'] = suburb
         item['job_type'] = job_type
         item['work_type'] = work_type
         item['pay_range'] = pay_range
-        item['job_description'] = content
+        item['job_description'] = str(content)
 
         if 'advertDetails' in data:
             self.parse_advert_details(item, data['advertDetails'])
@@ -149,20 +154,20 @@ class SeekSpider(scrapy.Spider):
         salary_text = salary.text if salary else None
 
         job_details = soup.find("div", attrs={"data-automation": "jobAdDetails"})
-        content = []
-        full_content = ''
-        if job_details:
-            for elem in job_details.recursiveChildGenerator():
-                if isinstance(elem, str) and elem.strip():
-                    content.append(elem.strip())
+        # content = []
+        # full_content = ''
+        # if job_details:
+        #     for elem in job_details.recursiveChildGenerator():
+        #         if isinstance(elem, str) and elem.strip():
+        #             content.append(elem.strip())
+        #
+        #     # Join all non-empty strings with a single space
+        #     full_content = ' '.join(content)
+        #     print(full_content)
+        # else:
+        #     print("Job details not found")
 
-            # Join all non-empty strings with a single space
-            full_content = ' '.join(content)
-            print(full_content)
-        else:
-            print("Job details not found")
-
-        return location_text,classifications_text,work_type_text,salary_text,full_content
+        return location_text,classifications_text,work_type_text,salary_text,job_details
 
     def parse_advert_details(self, item, advert_details):
         details_mapping = {
@@ -180,3 +185,7 @@ class SeekSpider(scrapy.Spider):
         # The pay range is optional, check if it exists
         if len(advert_details) >= 4:
             item['pay_range'] = advert_details[3].get_text()
+
+    def close(self, reason):
+        # This method is called when the spider is about to close
+        self.crawler.stats.set_value('scraped_job_ids', self.scraped_job_ids)

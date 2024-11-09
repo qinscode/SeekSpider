@@ -12,4 +12,5 @@ class SeekspiderItem(scrapy.Item):
     url = scrapy.Field()
     advertiser_id = scrapy.Field()
     job_type = scrapy.Field()
+    posted_date = scrapy.Field()
     pass
