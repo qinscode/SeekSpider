@@ -21,11 +21,12 @@ class SeekspiderPipeline(object):
                                           port=POSTGRESQL_PORT)
         self.cursor = self.connection.cursor()
         
-        # Set all IsNew to False before starting the spider
-        update_sql = f'UPDATE "{POSTGRESQL_TABLE}" SET "IsNew" = FALSE, "UpdatedAt" = now()'
+        # Only update IsNew to False where IsNew is True
+        update_sql = f'UPDATE "{POSTGRESQL_TABLE}" SET "IsNew" = FALSE, "UpdatedAt" = now() WHERE "IsNew" = TRUE'
         self.cursor.execute(update_sql)
+        rows_affected = self.cursor.rowcount
         self.connection.commit()
-        spider.logger.info("Set all existing jobs' IsNew to False")
+        spider.logger.info(f"Set {rows_affected} jobs' IsNew from True to False")
         
         # Load all job IDs into memory
         self.cursor.execute(f'SELECT "Id" FROM "{POSTGRESQL_TABLE}"')
