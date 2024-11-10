@@ -138,12 +138,12 @@ I have intentionally slowed down the speed to avoid any ban. If you feel the spi
 Before running the spider, you will need to create a `settings_local.py` file in your project directory. This file should contain the configuration settings for your database connection. Here is a template for the `settings_local.py` file:
 
 ```python
-MYSQL_HOST = 'localhost'
-MYSQL_PORT = 3306
-MYSQL_USER = 'MYSQL_USER'
-MYSQL_PASSWORD = 'MYSQL_PASSWORD'
-MYSQL_DATABASE = 'Seek'
-MYSQL_TABLE = 'Jobs_test'
+POSTGRESQL_HOST = 'localhost'
+POSTGRESQL_PORT = 3306
+POSTGRESQL_USER = 'POSTGRESQL_USER'
+POSTGRESQL_PASSWORD = 'POSTGRESQL_PASSWORD'
+POSTGRESQL_DATABASE = 'Seek'
+POSTGRESQL_TABLE = 'Jobs_test'
 ```
 
 Make sure that this file is not tracked by version control if it contains sensitive information such as your database password. You can add `settings_local.py` to your `.gitignore` file to prevent it from being committed to your git repository.
