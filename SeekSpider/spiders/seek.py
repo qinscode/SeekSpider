@@ -5,6 +5,7 @@ from scrapy.exceptions import CloseSpider
 from SeekSpider.items import SeekspiderItem
 from bs4 import BeautifulSoup
 import requests
+from SeekSpider.settings_local import AUTHORIZATION
 
 class SeekSpider(scrapy.Spider):
     name = "seek"
@@ -23,9 +24,10 @@ class SeekSpider(scrapy.Spider):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
                       'AppleWebKit/605.1.15 (KHTML, like Gecko) '
-                      'Version/17.4.1 Safari/605.1.15'
+                      'Version/17.4.1 Safari/605.1.15',
+        'Authorization': AUTHORIZATION
     }
-    base_url = "https://www.seek.com.au/api/chalice-search/v4/search"
+    base_url = "https://www.seek.com.au/api/jobsearch/v5/me/search"
     jd_url = "https://www.seek.com.au/job/"
     remove_text = '(Information & Communication Technology)'
 
@@ -79,13 +81,18 @@ class SeekSpider(scrapy.Spider):
 
     def parse(self, response):
         raw_data = response.json()
-        total_pages = raw_data['totalPages']
-        self.logger.info(f'Total Pages: {total_pages}')
+        
+        # Get items_per_page from solMetadata.pageSize
+        items_per_page = raw_data.get('solMetadata', {}).get('pageSize', 20)  # Default to 20 if not found
+        total_count = raw_data.get('totalCount', 0)
+        total_pages = (total_count + items_per_page - 1) // items_per_page  # Round up division
+        
+        self.logger.info(f'Total Count: {total_count}, Items Per Page: {items_per_page}, Total Pages: {total_pages}')
 
         for data in raw_data['data']:
             yield self.parse_job(data)
 
-        #  if there are more pages to scrape, keep going with current subclass
+        # if there are more pages to scrape, keep going with current subclass
         if self.params['page'] < total_pages:
             self.params['page'] += 1
             next_page = self.get_next_page_url()
@@ -106,7 +113,6 @@ class SeekSpider(scrapy.Spider):
 
             # if there are no more pages to scrape and no more subclasses, stop the spider
             else:
-                print(f'len subclassification_dict: {len(self.subclassification_dict)}',not bool(self.subclassification_dict))
                 self.logger.info('No more subclasses to scrape.')
                 raise CloseSpider('Reached last page of results')
 
@@ -118,21 +124,45 @@ class SeekSpider(scrapy.Spider):
         item = SeekspiderItem()
         item['job_id'] = data['id']
         self.scraped_job_ids.add(item['job_id'])
-        item['area'] = data.get('area', data['location'])
+
+        x = data.get('locations')
+        y = len(data['locations'])
+        # Get location from the first location in locations array
+        if data.get('locations') and len(data['locations']) > 0:
+            item['area'] = data['locations'][0].get('label', '')
+        else:
+            item['area'] = ''
+        
         item['url'] = self.jd_url + str(data['id'])
-        item['advertiser_id'] = data['advertiser']['id']
-        item['job_title'] = data['title']
-        item['business_name'] = data['advertiser']['description']
+        
+        # Get advertiser info
+        if 'advertiser' in data:
+            item['advertiser_id'] = data['advertiser'].get('id', '')
+            item['business_name'] = data['advertiser'].get('description', '')
+        
+        item['job_title'] = data.get('title', '')
+        item['posted_date'] = data.get('listingDate', '')
+        
+        # Get work type from workTypes array
+        if data.get('workTypes') and len(data['workTypes']) > 0:
+            item['work_type'] = data['workTypes'][0]
+        else:
+            item['work_type'] = ''
+        
+        # Get salary information
+        item['pay_range'] = data.get('salaryLabel', '')
+        
+        # Get job description and other details from the job page
         suburb, job_type, work_type, pay_range, content = self.fetch_job_description(item['url'])
-        item['posted_date'] = data['listingDate']
         item['suburb'] = suburb
         item['job_type'] = job_type
-        item['work_type'] = work_type
-        item['pay_range'] = pay_range
+        # Only use work_type from job page if not already set
+        if not item['work_type']:
+            item['work_type'] = work_type
+        # Only use pay_range from job page if not already set
+        if not item['pay_range']:
+            item['pay_range'] = pay_range
         item['job_description'] = str(content)
-
-        if 'advertDetails' in data:
-            self.parse_advert_details(item, data['advertDetails'])
 
         return item
 
