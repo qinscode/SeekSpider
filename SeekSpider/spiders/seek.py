@@ -71,8 +71,7 @@ class SeekSpider(scrapy.Spider):
         self.logger.info("Getting new authorization token...")
         auth_token = get_auth_token(SEEK_USERNAME, SEEK_PASSWORD)
 
-        self.logger.info("")
-
+        self.logger.info("Getting new authorization token...")
 
         if not auth_token:
             raise Exception("Failed to get authorization token")

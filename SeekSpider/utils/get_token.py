@@ -51,15 +51,31 @@ def get_login_url():
 def login_seek(username, password):
     try:
         # Initialize Chrome WebDriver with proper service and headless mode
-        service = Service(ChromeDriverManager().install())
+        from subprocess import check_output
+
+        # Get system architecture
+        arch = check_output(['uname', '-m']).decode().strip()
+
         options = webdriver.ChromeOptions()
         options.add_argument('--headless=new')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--window-size=1920,1080')  # Added window size
-        options.add_argument('--disable-blink-features=AutomationControlled')  # Added automation control disable
+        options.add_argument('--window-size=1920,1080')
+        options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_argument(
             '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+        if arch == 'aarch64':
+            # For ARM64 architecture
+            print("Detected ARM64 architecture...")
+            # Use the ARM64 specific chrome installation
+            options.binary_location = "/usr/bin/chromium-browser"  # or the path to your Chrome/Chromium binary
+            service = Service('/usr/bin/chromedriver')  # or the path to your ARM64 chromedriver
+        else:
+            # For other architectures, use WebDriver Manager
+            print(f"Detected {arch} architecture...")
+            service = Service(ChromeDriverManager().install())
+
         driver = webdriver.Chrome(service=service, options=options)
 
         # Set page load timeout
