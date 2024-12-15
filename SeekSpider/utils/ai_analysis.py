@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import requests
@@ -14,10 +15,19 @@ from SeekSpider.config import (
 MAX_RETRIES = 3
 RETRY_DELAY = 60  # Wait 60 seconds when quota exceeded
 
+
 def load_prompt():
     """Load the prompt from prompt.txt file"""
-    with open('prompt.txt', 'r', encoding='utf-8') as file:
-        return file.read().strip()
+    # Get the directory of the current file
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    prompt_path = os.path.join(current_dir, 'prompt.txt')
+
+    try:
+        with open(prompt_path, 'r', encoding='utf-8') as file:
+            return file.read().strip()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Prompt file not found at: {prompt_path}")
+
 
 def get_db_connection():
     """Create PostgreSQL database connection"""
@@ -29,6 +39,7 @@ def get_db_connection():
         database=POSTGRESQL_DATABASE
     )
     return conn
+
 
 def clean_api_response(response_text):
     """Clean and extract JSON array from API response"""
@@ -55,6 +66,7 @@ def clean_api_response(response_text):
 
         # If all attempts fail, return empty list
         return []
+
 
 def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
     """Extract technology stack from job description using DeepSeek API"""
@@ -84,7 +96,8 @@ def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
                 print(f"Job {job_id} - API error: {response.status_code} - {response.text}")
                 if response.status_code == 429:  # Rate limit
                     if attempt < retries - 1:
-                        print(f"Job {job_id} - Rate limited. Waiting {RETRY_DELAY} seconds before retry {attempt + 1}/{retries}")
+                        print(
+                            f"Job {job_id} - Rate limited. Waiting {RETRY_DELAY} seconds before retry {attempt + 1}/{retries}")
                         time.sleep(RETRY_DELAY)
                         continue
                 return []
@@ -117,6 +130,7 @@ def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
             return []
 
     return []
+
 
 def main():
     # Initialize components
@@ -176,3 +190,7 @@ def main():
             print(f"Success rate: {((processed_count - error_count) / processed_count * 100):.2f}%")
         print(f"Total tokens used: {total_tokens}")
         conn.close()
+
+
+if __name__ == "__main__":
+    main()
