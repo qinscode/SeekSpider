@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import requests
 from SeekSpider.utils.get_token import get_auth_token
 from SeekSpider.config import SEEK_USERNAME, SEEK_PASSWORD
+from SeekSpider.utils.ai_analysis import main as analyze_jobs
 
 class SeekSpider(scrapy.Spider):
     name = "seek"
@@ -231,3 +232,11 @@ class SeekSpider(scrapy.Spider):
     def close(self, reason):
         # This method is called when the spider is about to close
         self.crawler.stats.set_value('scraped_job_ids', self.scraped_job_ids)
+        
+        # Run AI analysis after scraping is complete
+        self.logger.info("Starting AI analysis of job descriptions...")
+        try:
+            analyze_jobs()
+            self.logger.info("AI analysis completed successfully")
+        except Exception as e:
+            self.logger.error(f"Error during AI analysis: {str(e)}")

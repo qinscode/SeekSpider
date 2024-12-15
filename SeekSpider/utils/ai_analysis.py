@@ -6,13 +6,18 @@ from psycopg2.extras import execute_batch
 from datetime import datetime
 from SeekSpider.config import (
     POSTGRESQL_HOST, POSTGRESQL_PORT, POSTGRESQL_USER,
-    POSTGRESQL_PASSWORD, POSTGRESQL_DATABASE,
+    POSTGRESQL_PASSWORD, POSTGRESQL_DATABASE, POSTGRESQL_TABLE,
     AI_API_KEY, AI_API_URL, AI_MODEL
 )
 
 # Retry configuration
 MAX_RETRIES = 3
 RETRY_DELAY = 60  # Wait 60 seconds when quota exceeded
+
+def load_prompt():
+    """Load the prompt from prompt.txt file"""
+    with open('prompt.txt', 'r', encoding='utf-8') as file:
+        return file.read().strip()
 
 def get_db_connection():
     """Create PostgreSQL database connection"""
@@ -24,6 +29,32 @@ def get_db_connection():
         database=POSTGRESQL_DATABASE
     )
     return conn
+
+def clean_api_response(response_text):
+    """Clean and extract JSON array from API response"""
+    try:
+        # Try to find content between first [ and last ]
+        start = response_text.find('[')
+        end = response_text.rfind(']')
+
+        if start != -1 and end != -1:
+            json_str = response_text[start:end + 1]
+            return json.loads(json_str)
+
+        # If no array markers found, try direct parse
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        # If still fails, try parsing each line to find valid JSON
+        lines = response_text.strip().split('\n')
+        for line in lines:
+            try:
+                if '[' in line and ']' in line:
+                    return json.loads(line.strip())
+            except json.JSONDecodeError:
+                continue
+
+        # If all attempts fail, return empty list
+        return []
 
 def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
     """Extract technology stack from job description using DeepSeek API"""
@@ -53,29 +84,23 @@ def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
                 print(f"Job {job_id} - API error: {response.status_code} - {response.text}")
                 if response.status_code == 429:  # Rate limit
                     if attempt < retries - 1:
-                        print(
-                            f"Job {job_id} - Rate limited. Waiting {RETRY_DELAY} seconds before retry {attempt + 1}/{retries}")
+                        print(f"Job {job_id} - Rate limited. Waiting {RETRY_DELAY} seconds before retry {attempt + 1}/{retries}")
                         time.sleep(RETRY_DELAY)
                         continue
                 return []
 
-            # 解析响应
             response_json = response.json()
             print(f"Job {job_id} - Full API response: {response_json}")
 
-            # 从响应中获取content
             response_text = response_json['choices'][0]['message']['content']
             print(f"Job {job_id} - Raw content: {response_text}")
 
-            # 清理并解析响应
             tech_stack = clean_api_response(response_text)
             print(f"Job {job_id} - Parsed tech stack: {tech_stack}")
 
-            # 添加token使用统计
             tokens = response_json['usage']
             print(f"Job {job_id} - Tokens used: {tokens}")
 
-            # Validate that we got a list
             if not isinstance(tech_stack, list):
                 print(f"Job {job_id} - Warning: Invalid response format. Got {type(tech_stack)}")
                 return []
@@ -87,7 +112,7 @@ def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
             print(f"Job {job_id} - Error processing: {error_message}")
             if attempt < retries - 1:
                 print(f"Job {job_id} - Retrying... ({attempt + 1}/{retries})")
-                time.sleep(5)  # 简单错误的重试间隔短一些
+                time.sleep(5)
                 continue
             return []
 
@@ -105,9 +130,9 @@ def main():
     try:
         with conn.cursor() as cur:
             # Get all jobs that don't have tech stack processed
-            cur.execute("""
+            cur.execute(f"""
                 SELECT "Id", "JobDescription" 
-                FROM "Jobs" 
+                FROM "{POSTGRESQL_TABLE}" 
                 WHERE "TechStack" IS NULL 
                 AND "JobDescription" IS NOT NULL
             """)
@@ -121,12 +146,10 @@ def main():
                     processed_count += 1
                     print(f"\n[{processed_count}/{total_jobs}] Processing job {job_id}...")
 
-                    # Extract tech stack
                     tech_stack = extract_tech_stack(prompt, description, job_id)
 
-                    # Update database
-                    cur.execute("""
-                        UPDATE "Jobs"
+                    cur.execute(f"""
+                        UPDATE "{POSTGRESQL_TABLE}"
                         SET "TechStack" = %s,
                             "UpdatedAt" = %s
                         WHERE "Id" = %s
@@ -153,6 +176,3 @@ def main():
             print(f"Success rate: {((processed_count - error_count) / processed_count * 100):.2f}%")
         print(f"Total tokens used: {total_tokens}")
         conn.close()
-
-if __name__ == "__main__":
-    main()
