@@ -1,4 +1,3 @@
-import logging
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -7,9 +6,7 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from urllib.parse import urlencode
-
-# Set up logger
-logger = logging.getLogger(__name__)
+import time
 
 def get_login_url():
     """
@@ -52,61 +49,109 @@ def get_login_url():
 
 
 def login_seek(username, password):
-    """
-    Login to SEEK using Selenium WebDriver
-
-    Args:
-        username (str): Your SEEK account username/email
-        password (str): Your SEEK account password
-
-    Returns:
-        webdriver: Browser session if login successful
-    """
     try:
-        # Initialize Chrome WebDriver with proper service
+        # Initialize Chrome WebDriver with proper service and headless mode
         service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service)
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless=new')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--window-size=1920,1080')  # Added window size
+        options.add_argument('--disable-blink-features=AutomationControlled')  # Added automation control disable
+        options.add_argument(
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        driver = webdriver.Chrome(service=service, options=options)
 
-        # Navigate to SEEK login page
+        # Set page load timeout
+        driver.set_page_load_timeout(30)
+        print("Browser initialized...")
+
+        # Navigate to login page and handle form...
         login_url = get_login_url()
         driver.get(login_url)
+        
+        wait = WebDriverWait(driver, 30)  # Increased wait time
+        print("Navigating to login page...")
 
-        # Wait for the login form to be loaded (maximum 20 seconds)
-        wait = WebDriverWait(driver, 20)
-
-        # Wait and find email input field using ID
-        email_input = wait.until(
-            EC.presence_of_element_located((By.ID, "emailAddress"))
-        )
-        email_input.send_keys(username)
-
-        # Find password input field using ID
-        password_input = wait.until(
-            EC.presence_of_element_located((By.ID, "password"))
-        )
-        password_input.send_keys(password)
-
-        # Find and click the sign in button using data-cy attribute
-        sign_in_button = wait.until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-cy='login']"))
-        )
-        sign_in_button.click()
-
-        # Wait for successful login (check for typical element on logged-in page)
+        # Handle email input with better error handling
         try:
-            wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-automation="account name"]'))
+            email_input = wait.until(EC.presence_of_element_located((By.ID, "emailAddress")))
+            print("Email input field found...")
+            email_input.clear()
+            email_input.send_keys(username)
+            print("Email entered...")
+        except TimeoutException:
+            print("Email input field not found - please check the login page")
+            driver.quit()
+            return None
+
+        # Handle password input with delay
+        try:
+            password_input = wait.until(EC.presence_of_element_located((By.ID, "password")))
+            print("Password input field found...")
+            password_input.clear()
+            password_input.send_keys(password)
+            print("Password entered...")
+
+            time.sleep(2)  # Added delay before clicking
+        except TimeoutException:
+            print("Password input field not found - please check the login page")
+            driver.quit()
+            return None
+
+        # Handle login button click with better error handling
+        try:
+            sign_in_button = wait.until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-cy='login']"))
             )
-            logger.info("Successfully logged in!")
+            print("Login button found...")
+            sign_in_button.click()
+            print("Login button clicked...")
+            
+            time.sleep(5)  # Added delay after clicking
+            print("Waiting for login to complete...")
+        except TimeoutException:
+            print("Login button not found - please check the login page")
+            driver.quit()
+            return None
+
+        # Check login success and save debug info
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-automation="account name"]')))
+            
+            # Get and print auth0 token info
+            print("\nAuth0 Token:")
+            auth0_token = driver.execute_script(
+                "var items = {}; "
+                "for (var i = 0, len = localStorage.length; i < len; ++i) { "
+                "    var key = localStorage.key(i); "
+                "    if(key.startsWith('@@auth0spajs@@')) { "
+                "        items[key] = localStorage.getItem(key); "
+                "    } "
+                "} "
+                "return items;"
+            )
+            for key, value in auth0_token.items():
+                try:
+                    import json
+                    token_data = json.loads(value)
+                    access_token = token_data.get('body', {}).get('access_token')
+                    print(f"\nAccess Token:")
+                    print(access_token)
+                except json.JSONDecodeError:
+                    print("Error parsing JSON token data")
+                except Exception as e:
+                    print(f"Error processing token: {str(e)}")
+
             return driver
 
         except TimeoutException:
-            logger.error("Login might have failed - please check credentials")
+            print("Login might have failed - please check credentials")
             driver.quit()
             return None
 
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
+        print(f"An error occurred: {str(e)}")
         if 'driver' in locals():
             driver.quit()
         return None
@@ -144,16 +189,16 @@ def get_auth_token(username, password):
                     token_data = json.loads(value)
                     access_token = token_data.get('body', {}).get('access_token')
                     if access_token:
-                        logger.info("Successfully obtained authentication token")
+                        print("Successfully obtained authentication token")
                         return f"Bearer {access_token}"
                 except json.JSONDecodeError:
-                    logger.error("Error parsing JSON token data")
+                    print("Error parsing JSON token data")
                     continue
                 except Exception as e:
-                    logger.error(f"Error processing token: {str(e)}")
+                    print(f"Error processing token: {str(e)}")
                     continue
                     
-            logger.error("No valid token found in browser session")
+            print("No valid token found in browser session")
             return None
     finally:
         if browser_session:
