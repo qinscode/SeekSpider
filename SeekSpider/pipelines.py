@@ -1,7 +1,7 @@
 import psycopg2
 from scrapy import signals
 
-from SeekSpider.settings_local import *
+from SeekSpider.config import *
 
 
 class SeekspiderPipeline(object):

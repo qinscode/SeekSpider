@@ -1,5 +1,15 @@
-*.pyc
-/test/test.py
-/test/
+# Environment variables
 .env
+.env.*
+
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.idea/
+.vscode/
+
+# Local settings
+config.py

@@ -6,7 +6,7 @@ from SeekSpider.items import SeekspiderItem
 from bs4 import BeautifulSoup
 import requests
 from SeekSpider.utils.get_token import get_auth_token
-from SeekSpider.settings_local import SEEK_USERNAME, SEEK_PASSWORD
+from SeekSpider.config import SEEK_USERNAME, SEEK_PASSWORD
 
 class SeekSpider(scrapy.Spider):
     name = "seek"
