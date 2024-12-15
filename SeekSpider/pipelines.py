@@ -1,6 +1,8 @@
 import psycopg2
-from SeekSpider.settings_local import *
 from scrapy import signals
+
+from SeekSpider.settings_local import *
+
 
 class SeekspiderPipeline(object):
 
@@ -159,15 +161,17 @@ class SeekspiderPipeline(object):
             spider.logger.info(f"Sample of jobs not in current scrape: {sample_invalid_jobs}")
 
             # 将不存在的职位标记为失效
-            update_expired_sql = f"""
+            update_expired_sql = f'''
                 UPDATE "{POSTGRESQL_TABLE}"
                 SET "IsActive" = FALSE, 
                     "UpdatedAt" = now(),
                     "ExpiryDate" = now()
-                WHERE "Id" = ANY(%s)
+                WHERE "Id" = ANY(%s::integer[])
                 AND "IsActive" = TRUE
-            """
-            self.cursor.execute(update_expired_sql, (list(invalid_job_ids),))
+            '''
+            # Convert string IDs to integers before passing to SQL
+            invalid_job_ids_int = [int(job_id) for job_id in invalid_job_ids]
+            self.cursor.execute(update_expired_sql, (invalid_job_ids_int,))
             expired_rows = self.cursor.rowcount
             self.connection.commit()
             spider.logger.info(f"Updated {expired_rows} jobs to IsActive=False")
