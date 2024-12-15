@@ -5,7 +5,8 @@ from scrapy.exceptions import CloseSpider
 from SeekSpider.items import SeekspiderItem
 from bs4 import BeautifulSoup
 import requests
-from SeekSpider.settings_local import AUTHORIZATION
+from SeekSpider.utils.get_token import get_auth_token
+from SeekSpider.settings_local import SEEK_USERNAME, SEEK_PASSWORD
 
 class SeekSpider(scrapy.Spider):
     name = "seek"
@@ -25,7 +26,6 @@ class SeekSpider(scrapy.Spider):
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
                       'AppleWebKit/605.1.15 (KHTML, like Gecko) '
                       'Version/17.4.1 Safari/605.1.15',
-        'Authorization': AUTHORIZATION
     }
     base_url = "https://www.seek.com.au/api/jobsearch/v5/me/search"
     jd_url = "https://www.seek.com.au/job/"
@@ -66,6 +66,19 @@ class SeekSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super(SeekSpider, self).__init__(*args, **kwargs)
         self.scraped_job_ids = set()
+        
+        # Get new authorization token
+        self.logger.info("Getting new authorization token...")
+        auth_token = get_auth_token(SEEK_USERNAME, SEEK_PASSWORD)
+
+        self.logger.info("")
+
+
+        if not auth_token:
+            raise Exception("Failed to get authorization token")
+            
+        self.headers['Authorization'] = auth_token
+        self.logger.info("Successfully obtained new authorization token")
 
     def start_requests(self):
         self.current_subclass,_ = self.subclassification_dict.popitem()

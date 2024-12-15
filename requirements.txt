@@ -4,3 +4,6 @@ psycopg2==2.9.9
 Requests==2.32.3
 Scrapy==2.8.0
 scrapy_fake_useragent==1.4.4
+python-dotenv~=1.0.0
+selenium==4.27.1
+webdriver_manager==4.0.2

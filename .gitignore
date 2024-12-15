@@ -1,5 +1,5 @@
-/SeekSpider/settings_local.py
-
 *.pyc
 /test/test.py
 /test/
+.env
+__pycache__/
