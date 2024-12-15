@@ -1,29 +1,31 @@
-# SeekSpider: A Scrapy Project for Job Crawling
+# SeekSpider: A Scrapy Project for Job Scraping
 
 ## Table of Contents
 
-- [Introduction](#introduction)
-- [Features](#features)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Setup](#setup)
-  - [Execution](#execution)
-- [Web API Parameters Explanation](#web-api-parameters-explanation)
-- [Project Components](#project-components)
-  - [Items](#items)
-  - [Spider](#spider)
-  - [Pipeline](#pipeline)
-  - [Settings](#settings)
-- [Configuration](#configuration)
-- [Database Schema](#database-schema)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
+- [SeekSpider: A Scrapy Project for Job Scraping](#seekspider-a-scrapy-project-for-job-scraping)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Features](#features)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+    - [Setup](#setup)
+    - [Execution](#execution)
+  - [Web API Parameters Explanation](#web-api-parameters-explanation)
+  - [Project Components](#project-components)
+    - [Items](#items)
+    - [Spider](#spider)
+    - [Pipeline](#pipeline)
+    - [settings](#settings)
+  - [Configuration](#configuration)
+  - [Database Schema](#database-schema)
+  - [Contributing](#contributing)
+  - [License](#license)
+  - [Acknowledgments](#acknowledgments)
 
 ## Introduction
 
-SeekSpider is a powerful web scraping tool built with Scrapy, a fast high-level web crawling and scraping framework for Python. Designed to extract job listings from seek.com.au, SeekSpider efficiently navigates through job listing pages, collects vital job-related information, and stores it for further analysis. It's equipped with functionality to handle pagination, navigate through different classifications, and manage retry logic in the event of request failures.
+SeekSpider is a powerful web scraping tool built with Scrapy, designed to extract job listings from seek.com.au. It uses Selenium for authentication and handles pagination through SEEK's API, storing the data in a PostgreSQL database. The spider efficiently navigates through job listing pages, collects vital job-related information, and manages retry logic in the event of request failures.
 
 ## Features
 
@@ -33,6 +35,12 @@ SeekSpider is a powerful web scraping tool built with Scrapy, a fast high-level 
 - Automatic traversal through different job classification categories.
 - Integration with BeautifulSoup for detailed job description scraping.
 - Built-in RetryMiddleware customization to handle HTTP error codes gracefully.
+- Automated login and token retrieval using Selenium WebDriver
+- API-based job data extraction with robust error handling
+- Smart pagination handling with subclassification support
+- PostgreSQL database integration with transaction management
+- Job status tracking (active/inactive)
+- Automatic token refresh mechanism
 
 ## Getting Started
 
@@ -42,7 +50,8 @@ Ensure you have the following installed on your system:
 
 - Python 3.9 or above
 - pip (Python package installer)
-- MySQL server (for database storage)
+- PostgreSQL server (for database storage)
+- Chrome/Chromium browser (for Selenium)
 
 ### Installation
 
@@ -59,21 +68,41 @@ cd SeekSpider
 pip install -r requirements.txt
 ```
 
-Be sure to have MySQL installed and running on your local machine or remote server with the required database and table schema set up. Configure your database settings in `settings_local.py` to point to your MySQL instance.
+3. Create a `.env` file in the project root:
+
+```env
+POSTGRESQL_HOST=your_host
+POSTGRESQL_PORT=5432
+POSTGRESQL_USER=your_user
+POSTGRESQL_PASSWORD=your_password
+POSTGRESQL_DATABASE=your_database
+POSTGRESQL_TABLE=your_table
+
+SEEK_USERNAME=your_seek_email
+SEEK_PASSWORD=your_seek_password
+```
+
+Be sure to have PostgreSQL installed and running on your local machine or remote server with the required database and table schema set up. Configure your database settings in `settings_local.py` to point to your PostgreSQL instance.
 
 ### Setup
 
 1. **Database Configuration**:
-   - Create your MySQL database and user with appropriate privileges.
-   - Define your database connection settings in `settings_local.py` or a settings file of your choice.
+   - Create your PostgreSQL database and user with appropriate privileges.
+   - Define your database connection settings in `.env` file.
 
 2. **Parameters Configuration**:
    - Customize search parameters in the `params` dictionary of the `SeekSpider` class for targeted scraping.
 
 ### Execution
 
-Run the spider using the following command:
+You can run the spider in two ways:
 
+1. Using the main script:
+```bash
+python main.py
+```
+
+2. Using scrapy directly:
 ```bash
 scrapy crawl seek
 ```
@@ -120,17 +149,38 @@ The `SeekspiderItem` class is defined as a Scrapy Item. Items provide a means to
 | `url`           | The direct URL to the job listing.                 |
 | `advertiser_id` | The unique identifier for the advertiser of the job. |
 | `job_type`      | The classification of the job.                     |
+| `posted_date`  | The original posting date of the job
+| `is_active`    | Indicates if the job listing is still active
+| `expiry_date` | When the job listing expired (if applicable)
 
 ### Spider
 
 The heart of the SeekSpider project is the `scrapy.Spider` subclass that defines how job listings are scraped. It constructs the necessary HTTP requests, parses the responses returned from the web server, and extracts the data using selectors to populate `SeekspiderItem` objects.
 
+The spider now includes:
+- Automatic authentication using Selenium
+- Token management for API access
+- Smart pagination with subclassification support
+- Robust error handling and retry logic
+
 ### Pipeline
 
-`SeekspiderPipeline` is responsible for processing the items scraped by the spider. Once an item has been populated with data by the spider, it is passed to the pipeline, where it establishes a connection to the MySQL database via pymysql and inserts the data into the corresponding table.
+`SeekspiderPipeline` is responsible for processing the items scraped by the spider. Once an item has been populated with data by the spider, it is passed to the pipeline, where it establishes a connection to the PostgreSQL database via pymysql and inserts the data into the corresponding table.
+
+The pipeline now handles:
+- Job status tracking (active/inactive)
+- Transaction management
+- Automatic job deactivation for expired listings
+- Efficient updates for existing jobs
 
 ### settings
 I have intentionally slowed down the speed to avoid any ban. If you feel the spider is too slow, please try to increase `CONCURRENT_REQUESTS` and decrease `DOWNLOAD_DELAY`.
+
+Additional important settings:
+- `CONCURRENT_REQUESTS = 16`: Concurrent request limit
+- `DOWNLOAD_DELAY = 2`: Delay between requests
+- Custom retry middleware configuration
+- Logging level configuration
 
 
 ## Configuration
@@ -139,11 +189,14 @@ Before running the spider, you will need to create a `settings_local.py` file in
 
 ```python
 POSTGRESQL_HOST = 'localhost'
-POSTGRESQL_PORT = 3306
-POSTGRESQL_USER = 'POSTGRESQL_USER'
-POSTGRESQL_PASSWORD = 'POSTGRESQL_PASSWORD'
-POSTGRESQL_DATABASE = 'Seek'
-POSTGRESQL_TABLE = 'Jobs_test'
+POSTGRESQL_PORT = 5432
+POSTGRESQL_USER = 'your_user'
+POSTGRESQL_PASSWORD = 'your_password'
+POSTGRESQL_DATABASE = 'your_database'
+POSTGRESQL_TABLE = 'your_table'
+
+SEEK_USERNAME = 'your_seek_email'
+SEEK_PASSWORD = 'your_seek_password'
 ```
 
 Make sure that this file is not tracked by version control if it contains sensitive information such as your database password. You can add `settings_local.py` to your `.gitignore` file to prevent it from being committed to your git repository.
@@ -160,21 +213,27 @@ params = {
 
 ## Database Schema
 
-Make sure that your MySQL database has a table with the correct schema to store the data. Below is a guideline schema based on the fields defined in the `SeekspiderItem`:
+Make sure that your PostgreSQL database has a table with the correct schema to store the data. Below is a guideline schema based on the fields defined in the `SeekspiderItem`:
 
 ```sql
-CREATE TABLE jobs (
-  job_id VARCHAR(255) PRIMARY KEY,
-  job_title VARCHAR(255),
-  business_name VARCHAR(255),
-  work_type VARCHAR(255),
-  job_description VARCHAR(255),
-  pay_range VARCHAR(255),
-  suburb VARCHAR(255),
-  area VARCHAR(255),
-  url VARCHAR(255),
-  advertiser_id VARCHAR(255),
-  job_type VARCHAR(255)
+CREATE TABLE "Jobs" (
+    "Id" INTEGER PRIMARY KEY,
+    "JobTitle" VARCHAR(255),
+    "BusinessName" VARCHAR(255),
+    "WorkType" VARCHAR(50),
+    "JobDescription" TEXT,
+    "PayRange" VARCHAR(255),
+    "Suburb" VARCHAR(255),
+    "Area" VARCHAR(255),
+    "Url" VARCHAR(255),
+    "AdvertiserId" INTEGER,
+    "JobType" VARCHAR(50),
+    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "UpdatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "ExpiryDate" TIMESTAMP,
+    "IsActive" BOOLEAN DEFAULT TRUE,
+    "IsNew" BOOLEAN DEFAULT TRUE,
+    "PostedDate" TIMESTAMP
 );
 ```
 
