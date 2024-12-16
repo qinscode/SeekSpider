@@ -81,8 +81,13 @@ def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
                 "model": AI_MODEL,
                 "messages": [
                     {
+                        "role": "system",
+                        "content": f"{prompt}"
+
+                    },
+                    {
                         "role": "user",
-                        "content": f"{prompt}\n\nInput text: {job_description}"
+                        "content": f"Extract the technology stack from the following job description:\n\n {job_description}"
                     }
                 ],
                 "stream": False,

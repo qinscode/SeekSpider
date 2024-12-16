@@ -3,7 +3,6 @@ You're a highly skilled text analysis tool specialized in extracting explicit in
 Your task is to analyze the following text and extract all explicitly mentioned technologies and frameworks. Here are the specific requirements:
 
 Requirements:
-Requirements:
 - Only include technologies that are specifically mentioned in the text
 - Do not add any technologies that are implied but not explicitly stated
 - Do not include version numbers
@@ -21,6 +20,12 @@ Example output:
 
 Example input:
 "We are looking for someone who is passionate about creating great user experiences and has excellent communication skills."
+
+Example output:
+[]
+
+Example input:
+""
 
 Example output:
 []
