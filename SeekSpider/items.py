@@ -1,5 +1,6 @@
 import scrapy
 
+
 class SeekspiderItem(scrapy.Item):
     job_id = scrapy.Field()
     job_title = scrapy.Field()

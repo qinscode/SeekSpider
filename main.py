@@ -1,9 +1,9 @@
 # coding:utf-8
 __author__ = 'Jack Qin'
 
-import sys
 import os
-from scrapy.utils.ossignal import install_shutdown_handlers
+import sys
+
 from scrapy.cmdline import execute
 
 try:

@@ -1,15 +1,18 @@
+import time
+from urllib.parse import urlencode
+
 from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
-from urllib.parse import urlencode
-import time
+
 from SeekSpider.core.logger import Logger
 
 logger = Logger('get_token')
+
 
 def get_login_url():
     """
@@ -87,7 +90,7 @@ def login_seek(username, password):
         # Navigate to login page and handle form...
         login_url = get_login_url()
         driver.get(login_url)
-        
+
         wait = WebDriverWait(driver, 30)
         logger.info("Navigating to login page...")
 
@@ -122,7 +125,7 @@ def login_seek(username, password):
             logger.info("Login button found...")
             sign_in_button.click()
             logger.info("Login button clicked...")
-            
+
             time.sleep(5)
             logger.info("Waiting for login to complete...")
         except TimeoutException:
@@ -132,7 +135,7 @@ def login_seek(username, password):
 
         try:
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-automation="account name"]')))
-            
+
             # Get and print auth0 token info
             logger.info("\nAuth0 Token:")
             auth0_token = driver.execute_script(
@@ -197,7 +200,7 @@ def get_auth_token(username, password):
                 "} "
                 "return items;"
             )
-            
+
             for value in auth0_token.values():
                 try:
                     import json
@@ -212,10 +215,9 @@ def get_auth_token(username, password):
                 except Exception as e:
                     logger.error(f"Error processing token: {str(e)}")
                     continue
-                    
+
             logger.warning("No valid token found in browser session")
             return None
     finally:
         if browser_session:
             browser_session.quit()
-

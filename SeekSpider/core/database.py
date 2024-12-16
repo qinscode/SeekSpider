@@ -1,20 +1,21 @@
-import psycopg2
-from psycopg2.extras import execute_batch
-from datetime import datetime
 from contextlib import contextmanager
+
+import psycopg2
+
 
 class DatabaseManager:
     def __init__(self, config):
+
         self.config = config
         self.logger = None
-        
+
     def set_logger(self, logger):
         self.logger = logger
-        
+
     def log(self, level, msg):
         if self.logger:
             getattr(self.logger, level)(msg)
-    
+
     @contextmanager
     def get_connection(self):
         conn = None
@@ -35,7 +36,7 @@ class DatabaseManager:
             if conn:
                 conn.close()
                 self.log('debug', 'Database connection closed')
-    
+
     @contextmanager
     def get_cursor(self):
         with self.get_connection() as conn:
@@ -49,7 +50,7 @@ class DatabaseManager:
                 raise
             finally:
                 cursor.close()
-    
+
     def execute_query(self, query, params=None):
         with self.get_cursor() as cur:
             try:
@@ -58,7 +59,7 @@ class DatabaseManager:
             except Exception as e:
                 self.log('error', f'Query execution error: {str(e)}')
                 raise
-    
+
     def execute_update(self, query, params=None):
         with self.get_cursor() as cur:
             try:
@@ -67,12 +68,12 @@ class DatabaseManager:
             except Exception as e:
                 self.log('error', f'Update execution error: {str(e)}')
                 raise
-    
+
     def get_existing_job_ids(self):
         query = f'SELECT "Id" FROM "{self.config.POSTGRESQL_TABLE}"'
         results = self.execute_query(query)
         return {str(row[0]) for row in results}
-    
+
     def insert_job(self, job_data):
         columns = ', '.join([f'"{k}"' for k in job_data.keys()])
         placeholders = ', '.join(['%s'] * len(job_data))
@@ -82,7 +83,7 @@ class DatabaseManager:
         '''
         self.execute_update(query, list(job_data.values()))
         self.log('info', f'Inserted job with ID: {job_data.get("Id")}')
-    
+
     def update_job(self, job_id, job_data):
         set_clause = ', '.join([f'"{k}" = %s' for k in job_data.keys()])
         query = f'''
@@ -93,11 +94,11 @@ class DatabaseManager:
         affected = self.execute_update(query, list(job_data.values()) + [job_id])
         self.log('info', f'Updated job {job_id}, affected rows: {affected}')
         return affected
-    
+
     def mark_jobs_inactive(self, job_ids):
         if not job_ids:
             return 0
-            
+
         query = f'''
             UPDATE "{self.config.POSTGRESQL_TABLE}"
             SET "IsActive" = FALSE, 
@@ -110,7 +111,7 @@ class DatabaseManager:
         affected = self.execute_update(query, (job_ids_int,))
         self.log('info', f'Marked {affected} jobs as inactive')
         return affected
-    
+
     def get_unprocessed_jobs(self):
         query = f'''
             SELECT "Id", "JobDescription" 
@@ -118,4 +119,4 @@ class DatabaseManager:
             WHERE "TechStack" IS NULL 
             AND "JobDescription" IS NOT NULL
         '''
-        return self.execute_query(query) 
+        return self.execute_query(query)

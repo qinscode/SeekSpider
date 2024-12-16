@@ -16,12 +16,12 @@ class SeekspiderPipeline(object):
 
     def open_spider(self, spider):
         self.connection = psycopg2.connect(host=POSTGRESQL_HOST,
-                                          user=POSTGRESQL_USER,
-                                          password=POSTGRESQL_PASSWORD,
-                                          database=POSTGRESQL_DATABASE,
-                                          port=POSTGRESQL_PORT)
+                                           user=POSTGRESQL_USER,
+                                           password=POSTGRESQL_PASSWORD,
+                                           database=POSTGRESQL_DATABASE,
+                                           port=POSTGRESQL_PORT)
         self.cursor = self.connection.cursor()
-        
+
         # Load all job IDs into memory, regardless of their status
         try:
             self.cursor.execute(f'SELECT "Id" FROM "{POSTGRESQL_TABLE}"')
@@ -37,11 +37,11 @@ class SeekspiderPipeline(object):
 
     def process_item(self, item, spider):
         job_id = str(item.get('job_id'))  # Convert to string to ensure consistent type comparison
-        
+
         # Check if the job ID already exists in memory
         if job_id in self.existing_job_ids:
             spider.logger.info(f"Job ID: {job_id} already exists. Updating instead of inserting.")
-            
+
             # Update existing job
             update_sql = """
                 UPDATE "{}" SET 
@@ -85,11 +85,11 @@ class SeekspiderPipeline(object):
                 self.cursor.execute(update_sql, params)
                 self.connection.commit()
                 # spider.logger.info(f"Job ID: {job_id} updated successfully.")
-                
+
             except Exception as e:
                 self.connection.rollback()  # 回滚事务
                 spider.logger.error(f"Error updating job {job_id}: {str(e)}")
-                
+
             return item
 
         # Handle new job insertion
@@ -142,7 +142,7 @@ class SeekspiderPipeline(object):
 
             # Add the new job ID to the in-memory set
             self.existing_job_ids.add(job_id)
-            
+
         except Exception as e:
             self.connection.rollback()  # 回滚事务
             spider.logger.error(f"Error inserting job {job_id}: {str(e)}")
@@ -151,7 +151,7 @@ class SeekspiderPipeline(object):
 
     def spider_closed(self, spider):
         scraped_job_ids = spider.crawler.stats.get_value('scraped_job_ids', set())
-        
+
         # 找出在数据库中但不在本次爬取中的职位ID（已过期的职位）
         invalid_job_ids = self.existing_job_ids - scraped_job_ids
 
