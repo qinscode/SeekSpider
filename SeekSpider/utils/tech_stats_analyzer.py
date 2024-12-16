@@ -60,6 +60,7 @@ class TechStatsAnalyzer:
     def _get_tech_stack_data(self):
         """Get and clean tech stack data from database"""
         try:
+            self.logger.info("Fetching tech stack data from database...")
             query = f'''
                 SELECT "Id", "TechStack"
                 FROM "{self.db.config.POSTGRESQL_TABLE}"
@@ -68,11 +69,18 @@ class TechStatsAnalyzer:
                 AND "IsActive" = TRUE
             '''
             jobs = self.db.execute_query(query)
+            self.logger.info(f"Found {len(jobs)} jobs with tech stack data")
 
             tech_stacks = []
             skipped = 0
+            processed = 0
+            total_jobs = len(jobs)
 
             for job_id, tech_stack in jobs:
+                processed += 1
+                if processed % 100 == 0:  # 每处理100条记录显示一次进度
+                    self.logger.info(f"Processing job records: {processed}/{total_jobs}")
+                
                 try:
                     # Parse JSON array
                     techs = json.loads(tech_stack)
@@ -120,7 +128,7 @@ class TechStatsAnalyzer:
     def _save_frequencies(self, frequencies):
         """Save frequency results to database"""
         try:
-            # Create/update frequency table
+            self.logger.info("Creating/updating frequency statistics table...")
             create_table_query = '''
                 CREATE TABLE IF NOT EXISTS tech_word_frequency (
                     word VARCHAR(255) PRIMARY KEY,
@@ -130,18 +138,29 @@ class TechStatsAnalyzer:
             '''
             self.db.execute_update(create_table_query)
 
-            # Clear existing data
+            self.logger.info("Clearing existing frequency data...")
             self.db.execute_update("TRUNCATE TABLE tech_word_frequency")
 
-            # Insert new frequencies (top 200 only)
-            for word, freq in frequencies[:200]:
-                query = '''
-                    INSERT INTO tech_word_frequency (word, frequency)
-                    VALUES (%s, %s)
-                '''
-                self.db.execute_update(query, (word, freq))
+            total_records = min(200, len(frequencies))
+            self.logger.info(f"Starting to save top {total_records} technology frequencies...")
 
-            self.logger.info(f"Saved top 200 technology frequencies")
+            # 准备批量插��的数据
+            batch_data = [(word, freq) for word, freq in frequencies[:200]]
+            
+            # 使用批量插入
+            query = '''
+                INSERT INTO tech_word_frequency (word, frequency)
+                VALUES %s
+            '''
+            
+            # 使用DatabaseManager的上下文管理器
+            with self.db.get_connection() as conn:
+                with conn.cursor() as cur:
+                    from psycopg2.extras import execute_values
+                    execute_values(cur, query, batch_data)
+                    conn.commit()
+
+            self.logger.info(f"Successfully saved all {total_records} frequency records")
 
         except Exception as e:
             self.logger.error(f"Error saving frequencies: {str(e)}")
@@ -150,23 +169,32 @@ class TechStatsAnalyzer:
     def process_all_jobs(self):
         """Run complete technology stack analysis"""
         try:
+            self.logger.info("="*50)
             self.logger.info("Starting technology stack analysis...")
+            self.logger.info("="*50)
 
             # Get and clean data
+            self.logger.info("\n[Step 1/3] Collecting tech stack data...")
             tech_stacks = self._get_tech_stack_data()
 
             # Calculate frequencies
+            self.logger.info("\n[Step 2/3] Calculating technology frequencies...")
             frequencies = self._calculate_frequencies(tech_stacks)
 
             # Save results
+            self.logger.info("\n[Step 3/3] Saving results to database...")
             self._save_frequencies(frequencies)
 
             # Log top technologies
-            self.logger.info("\nTop 20 Technologies:")
+            self.logger.info("\n" + "="*50)
+            self.logger.info("Analysis Results - Top 20 Technologies:")
+            self.logger.info("="*50)
             for i, (tech, count) in enumerate(frequencies[:20], 1):
                 self.logger.info(f"{i:2d}. {tech:<30} : {count:5d}")
 
-            self.logger.info("\nAnalysis complete")
+            self.logger.info("\n" + "="*50)
+            self.logger.info("Analysis complete!")
+            self.logger.info("="*50)
 
         except Exception as e:
             self.logger.error(f"Critical error in tech stack analysis: {str(e)}")
