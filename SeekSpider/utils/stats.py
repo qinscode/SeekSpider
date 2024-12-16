@@ -52,6 +52,7 @@ class TechStatsAnalyzer:
             'AWS': 'AWS',
             'Amazon AWS': 'AWS',
             'Amazon Web Services': 'AWS',
+            '.NET': '.Net'
         }
 
         return tech_aliases.get(tech, tech)

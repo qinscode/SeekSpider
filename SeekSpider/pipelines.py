@@ -1,7 +1,7 @@
 import psycopg2
 from scrapy import signals
 
-from SeekSpider.config import *
+from SeekSpider.core.config import config
 
 
 class SeekspiderPipeline(object):
@@ -15,17 +15,19 @@ class SeekspiderPipeline(object):
         return instance
 
     def open_spider(self, spider):
-        self.connection = psycopg2.connect(host=POSTGRESQL_HOST,
-                                           user=POSTGRESQL_USER,
-                                           password=POSTGRESQL_PASSWORD,
-                                           database=POSTGRESQL_DATABASE,
-                                           port=POSTGRESQL_PORT)
+        self.connection = psycopg2.connect(
+            host=config.POSTGRESQL_HOST,
+            user=config.POSTGRESQL_USER,
+            password=config.POSTGRESQL_PASSWORD,
+            database=config.POSTGRESQL_DATABASE,
+            port=config.POSTGRESQL_PORT
+        )
         self.cursor = self.connection.cursor()
 
         # Load all job IDs into memory, regardless of their status
         try:
-            self.cursor.execute(f'SELECT "Id" FROM "{POSTGRESQL_TABLE}"')
-            self.existing_job_ids = set(str(row[0]) for row in self.cursor.fetchall())  # Convert IDs to strings
+            self.cursor.execute(f'SELECT "Id" FROM "{config.POSTGRESQL_TABLE}"')
+            self.existing_job_ids = set(str(row[0]) for row in self.cursor.fetchall())
             spider.logger.info(f"Loaded {len(self.existing_job_ids)} existing job IDs")
         except Exception as e:
             spider.logger.error(f"Error loading existing job IDs: {str(e)}")
@@ -60,7 +62,7 @@ class SeekspiderPipeline(object):
                     "ExpiryDate" = NULL,
                     "IsActive" = TRUE
                 WHERE "Id" = %s
-            """.format(POSTGRESQL_TABLE)
+            """.format(config.POSTGRESQL_TABLE)
 
             try:
                 advertiser_id = item.get('advertiser_id')
@@ -114,7 +116,7 @@ class SeekspiderPipeline(object):
             VALUES (
                 %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now(),true,%s
             )
-            """.format(POSTGRESQL_TABLE)
+            """.format(config.POSTGRESQL_TABLE)
 
         try:
             advertiser_id = item.get('advertiser_id')
@@ -162,7 +164,7 @@ class SeekspiderPipeline(object):
 
             # 将不存在的职位标记为失效
             update_expired_sql = f'''
-                UPDATE "{POSTGRESQL_TABLE}"
+                UPDATE "{config.POSTGRESQL_TABLE}"
                 SET "IsActive" = FALSE, 
                     "UpdatedAt" = now(),
                     "ExpiryDate" = now()
