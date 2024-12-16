@@ -17,11 +17,11 @@ RETRY_DELAY = 60  # Wait 60 seconds when quota exceeded
 
 
 def load_prompt():
-    """Load the prompt from prompt.txt file"""
+    """Load the prompt from salary_prompt.txt file"""
     # Get the directory of the current file
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    prompt_path = os.path.join(current_dir, 'prompt.txt')
-
+    prompt_path = os.path.join(current_dir, 'salary_prompt.txt')
+    
     try:
         with open(prompt_path, 'r', encoding='utf-8') as file:
             return file.read().strip()
@@ -65,37 +65,33 @@ def clean_api_response(response_text):
                 continue
 
         # If all attempts fail, return empty list
-        return []
+        return [0, 0]
 
 
-def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
-    """Extract technology stack from job description using DeepSeek API"""
+def extract_salary_range(prompt, pay_range, job_id, retries=MAX_RETRIES):
+    """Extract salary range using DeepSeek API"""
     headers = {
         "Authorization": f"Bearer {AI_API_KEY}",
         "Content-Type": "application/json"
     }
 
+    pay_range = pay_range or "Null"
     for attempt in range(retries):
         try:
             payload = {
-                "temperature": 1.3,
                 "model": AI_MODEL,
                 "messages": [
                     {
-                        "role": "system",
-                        "content": f"{prompt}"
-
-                    },
-                    {
                         "role": "user",
-                        "content": f"Extract the technology stack from the following job description:\n\n {job_description}"
+                        "content": f"{prompt}\n\nInput text: {pay_range}"
                     }
                 ],
                 "stream": False,
                 "response_format": {"type": "text"}
             }
 
-            print(f"\nJob {job_id} - Calling DeepSeek API...")
+            print(f"\nJob {job_id} - PayRange: {pay_range} - Pay ")
+            print(f"Job {job_id} - Calling DeepSeek API...")
             response = requests.post(AI_API_URL, json=payload, headers=headers)
 
             if response.status_code != 200:
@@ -106,25 +102,21 @@ def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
                             f"Job {job_id} - Rate limited. Waiting {RETRY_DELAY} seconds before retry {attempt + 1}/{retries}")
                         time.sleep(RETRY_DELAY)
                         continue
-                return []
+                return [0, 0]
 
             response_json = response.json()
-            print(f"Job {job_id} - Full API response: {response_json}")
-
             response_text = response_json['choices'][0]['message']['content']
-            print(f"Job {job_id} - Raw content: {response_text}")
+            print(f"Job {job_id} - Raw API response: {response_text}")
 
-            tech_stack = clean_api_response(response_text)
-            print(f"Job {job_id} - Parsed tech stack: {tech_stack}")
+            salary_range = clean_api_response(response_text)
+            print(f"Job {job_id} - Parsed salary range: {salary_range}")
 
-            tokens = response_json['usage']
-            print(f"Job {job_id} - Tokens used: {tokens}")
+            # Validate response format
+            if not isinstance(salary_range, list) or len(salary_range) != 2:
+                print(f"Job {job_id} - Warning: Invalid response format. Expected [min, max], got: {salary_range}")
+                return [0, 0]
 
-            if not isinstance(tech_stack, list):
-                print(f"Job {job_id} - Warning: Invalid response format. Got {type(tech_stack)}")
-                return []
-
-            return tech_stack
+            return salary_range
 
         except Exception as e:
             error_message = str(e)
@@ -133,9 +125,9 @@ def extract_tech_stack(prompt, job_description, job_id, retries=MAX_RETRIES):
                 print(f"Job {job_id} - Retrying... ({attempt + 1}/{retries})")
                 time.sleep(5)
                 continue
-            return []
+            return [0, 0]
 
-    return []
+    return [0, 0]
 
 
 def main():
@@ -145,38 +137,43 @@ def main():
 
     processed_count = 0
     error_count = 0
-    total_tokens = 0
 
     try:
         with conn.cursor() as cur:
-            # Get all jobs that don't have tech stack processed
+            # Get all jobs that don't have salary range processed
             cur.execute(f"""
-                SELECT "Id", "JobDescription" 
+                SELECT "Id", "PayRange"
                 FROM "{POSTGRESQL_TABLE}" 
-                WHERE "TechStack" IS NULL 
-                AND "JobDescription" IS NOT NULL
+                WHERE ("MinSalary" IS NULL OR "MaxSalary" IS NULL)
+                AND "PayRange" IS NOT NULL
             """)
 
             jobs = cur.fetchall()
             total_jobs = len(jobs)
             print(f"Found {total_jobs} jobs to process")
 
-            for job_id, description in jobs:
+            for job_id, pay_range in jobs:
                 try:
                     processed_count += 1
                     print(f"\n[{processed_count}/{total_jobs}] Processing job {job_id}...")
 
-                    tech_stack = extract_tech_stack(prompt, description, job_id)
+                    # Extract salary range
+                    salary_range = extract_salary_range(prompt, pay_range, job_id)
 
+                    # Ensure we have two numbers
+                    min_salary, max_salary = salary_range if len(salary_range) == 2 else [0, 0]
+
+                    # Update database
                     cur.execute(f"""
                         UPDATE "{POSTGRESQL_TABLE}"
-                        SET "TechStack" = %s,
+                        SET "MinSalary" = %s,
+                            "MaxSalary" = %s,
                             "UpdatedAt" = %s
                         WHERE "Id" = %s
-                    """, (json.dumps(tech_stack), datetime.now(), job_id))
+                    """, (min_salary, max_salary, datetime.now(), job_id))
 
                     conn.commit()
-                    print(f"Job {job_id} - Database updated successfully")
+                    print(f"Job {job_id} - Database updated successfully: Min={min_salary}, Max={max_salary}")
 
                 except Exception as e:
                     error_count += 1
@@ -194,7 +191,6 @@ def main():
         print(f"Errors: {error_count}")
         if processed_count > 0:
             print(f"Success rate: {((processed_count - error_count) / processed_count * 100):.2f}%")
-        print(f"Total tokens used: {total_tokens}")
         conn.close()
 
 

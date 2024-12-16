@@ -84,7 +84,7 @@ class SeekspiderPipeline(object):
 
                 self.cursor.execute(update_sql, params)
                 self.connection.commit()
-                spider.logger.info(f"Job ID: {job_id} updated successfully.")
+                # spider.logger.info(f"Job ID: {job_id} updated successfully.")
                 
             except Exception as e:
                 self.connection.rollback()  # 回滚事务
