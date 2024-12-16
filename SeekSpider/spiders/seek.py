@@ -12,8 +12,8 @@ from SeekSpider.core.database import DatabaseManager
 from SeekSpider.items import SeekspiderItem
 from SeekSpider.utils.get_token import get_auth_token
 from SeekSpider.utils.salary_normalizer import SalaryNormalizer
+from SeekSpider.utils.tech_frequency_analyzer import TechStatsAnalyzer
 from SeekSpider.utils.tech_stack_analyzer import TechStackAnalyzer
-from SeekSpider.utils.tech_stats_analyzer import TechStatsAnalyzer
 
 
 class SeekSpider(scrapy.Spider):

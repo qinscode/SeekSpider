@@ -83,7 +83,9 @@ class TechStackAnalyzer:
     def analyze_job(self, job_id, description):
         """Analyze a single job's tech stack"""
         try:
-            self.logger.info(f"Analyzing job {job_id}")
+            # 添加 description 预览到日志
+            desc_preview = (description[:50] + '...') if len(description) > 50 else description
+            self.logger.info(f"Analyzing job {job_id} - Description: {desc_preview}")
 
             # Get AI analysis
             response = self.ai_client.analyze_text(self.prompt, description)
@@ -106,7 +108,7 @@ class TechStackAnalyzer:
             return tech_stack
 
         except Exception as e:
-            self.logger.error(f"Error analyzing job {job_id}: {str(e)}")
+            self.logger.error(f"Error analyzing job {job_id} - Description: {desc_preview}: {str(e)}")
             raise  # 让装饰器捕获异常并进行重试
 
     @retry_on_db_error()

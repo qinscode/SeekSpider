@@ -12,6 +12,8 @@ class AIClient:
         }
 
     def analyze_text(self, prompt, text, max_retries=3, retry_delay=60):
+        if text == "":
+            text = "No content provided."
         for attempt in range(max_retries):
             try:
                 payload = {
@@ -23,11 +25,12 @@ class AIClient:
                         },
                         {
                             "role": "user",
-                            "content": text
+                            "content": "Please analyze the following content:" + text
                         }
                     ],
                     "stream": False,
-                    "response_format": {"type": "text"}
+                    "response_format": {"type": "text"},
+                    "temperature": 1.3
                 }
 
                 response = requests.post(

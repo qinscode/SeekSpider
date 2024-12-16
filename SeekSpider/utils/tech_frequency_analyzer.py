@@ -37,9 +37,9 @@ class TechStatsAnalyzer:
             'React.js': 'React',
             'ReactJS': 'React',
             'React.JS': 'React',
-            'Microsoft 365': 'Office 365',
-            'MS 365': 'Office 365',
-            'Microsoft Office 365': 'Office 365',
+            'Microsoft 365': 'Microsoft Office',
+            'MS 365': 'Microsoft Office',
+            'Microsoft Office 365': 'Microsoft Office',
             'Javascript': 'JavaScript',
             'javascript': 'JavaScript',
             'TypeScript': 'TypeScript',
@@ -205,7 +205,7 @@ def main():
     """Main entry point for technology stack analysis"""
     try:
         # Initialize components
-        logger = Logger('tech_stats_analyzer')
+        logger = Logger('tech_frequency_analyzer')
         db = DatabaseManager(config)
         db.set_logger(logger)
 
