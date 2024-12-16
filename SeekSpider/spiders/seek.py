@@ -9,6 +9,7 @@ from SeekSpider.utils.get_token import get_auth_token
 from SeekSpider.config import SEEK_USERNAME, SEEK_PASSWORD
 from SeekSpider.utils.ai_analysis import main as analyze_jobs
 from SeekSpider.utils.salary_normalizer import main as normalize_salaries
+from SeekSpider.utils.stats import main as analyze_tech_stats
 
 class SeekSpider(scrapy.Spider):
     name = "seek"
@@ -249,3 +250,11 @@ class SeekSpider(scrapy.Spider):
             self.logger.info("Salary normalization completed successfully")
         except Exception as e:
             self.logger.error(f"Error during salary normalization: {str(e)}")
+
+        # Run tech stack statistics analysis
+        self.logger.info("Starting tech stack statistics analysis...")
+        try:
+            analyze_tech_stats()
+            self.logger.info("Tech stack statistics analysis completed successfully")
+        except Exception as e:
+            self.logger.error(f"Error during tech stack analysis: {str(e)}")
