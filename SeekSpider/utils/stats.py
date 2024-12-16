@@ -1,205 +1,189 @@
-import psycopg2
+import json
 from collections import Counter
-import re
-from typing import List, Dict
 from datetime import datetime
-from SeekSpider.config import (
-    POSTGRESQL_HOST, POSTGRESQL_PORT, POSTGRESQL_USER,
-    POSTGRESQL_PASSWORD, POSTGRESQL_DATABASE
-)
+from SeekSpider.core.config import config
+from SeekSpider.core.database import DatabaseManager
+from SeekSpider.core.logger import Logger
 
-def log_message(message: str):
-    """Print log message with timestamp"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}")
-
-def connect_to_db() -> psycopg2.extensions.connection:
-    """Connect to PostgreSQL database"""
-    try:
-        log_message("Connecting to database...")
-        conn = psycopg2.connect(
-            host=POSTGRESQL_HOST,
-            port=POSTGRESQL_PORT,
-            user=POSTGRESQL_USER,
-            password=POSTGRESQL_PASSWORD,
-            database=POSTGRESQL_DATABASE
-        )
-        log_message("Database connection successful")
-        return conn
-    except Exception as e:
-        log_message(f"Database connection error: {e}")
-        raise
-
-def normalize_tech_name(tech: str) -> str:
-    """Normalize technology stack names"""
-    # Remove whitespace
-    tech = tech.strip()
-
-    # List of invalid or meaningless technology names to filter out
-    filter_list = {
-        '',  # empty string
-        ' ',  # space
-        'etc',
-        'etc.',
-        'Etc',
-        'Etc.',
-        'others',
-        'Others',
-        'Other',
-        'other',
-        'and',
-        'And',
-        'more',
-        'More',
-        '-',
-        '.',
-        '...',
-        'N/A',
-        'n/a',
-        'NA',
-        'na',
-        'None',
-        'none',
-        'null',
-        'Null',
-        'NULL',
-        'Microsoft'
-    }
-
-    # Return None if tech name is in filter list
-    if tech in filter_list:
-        return None
-
-    # Define technology stack aliases mapping
-    tech_aliases = {
-        'React.js': 'React',
-        'ReactJS': 'React',
-        'React.JS': 'React',
-        'Microsoft 365': 'Office 365',
-        'MS 365': 'Office 365',
-        'Microsoft Office 365': 'Office 365',
-        'Javascript': 'JavaScript',
-        'javascript': 'JavaScript',
-        'TypeScript': 'TypeScript',
-        'typescript': 'TypeScript',
-        'Vue.js': 'Vue',
-        'VueJS': 'Vue',
-        'Node.js': 'Node.js',
-        'NodeJS': 'Node.js',
-        'Nodejs': 'Node.js',
-        'AWS': 'AWS',
-        'Amazon AWS': 'AWS',
-        'Amazon Web Services': 'AWS',
-    }
-
-    # Return normalized name
-    return tech_aliases.get(tech, tech)
-
-def get_tech_stack_data() -> List[str]:
-    """Get TechStack text data from database and convert to array"""
-    conn = connect_to_db()
-    try:
-        with conn.cursor() as cur:
-            log_message("Starting TechStack data query...")
-            cur.execute("""
-                SELECT unnest(string_to_array("TechStack", ',')) 
-                FROM "Jobs" 
+class TechStatsAnalyzer:
+    def __init__(self, db_manager, logger):
+        self.db = db_manager
+        self.logger = logger
+        
+    def _normalize_tech_name(self, tech):
+        """Normalize technology stack names"""
+        if not tech:
+            return None
+            
+        # Remove whitespace
+        tech = tech.strip()
+        
+        # Filter out invalid or meaningless names
+        filter_list = {
+            '', ' ', 'etc', 'etc.', 'Etc', 'Etc.',
+            'others', 'Others', 'Other', 'other',
+            'and', 'And', 'more', 'More',
+            '-', '.', '...', 'N/A', 'n/a', 'NA', 'na',
+            'None', 'none', 'null', 'Null', 'NULL',
+            'Microsoft'
+        }
+        
+        if tech in filter_list:
+            return None
+            
+        # Technology aliases mapping
+        tech_aliases = {
+            'React.js': 'React',
+            'ReactJS': 'React',
+            'React.JS': 'React',
+            'Microsoft 365': 'Office 365',
+            'MS 365': 'Office 365',
+            'Microsoft Office 365': 'Office 365',
+            'Javascript': 'JavaScript',
+            'javascript': 'JavaScript',
+            'TypeScript': 'TypeScript',
+            'typescript': 'TypeScript',
+            'Vue.js': 'Vue',
+            'VueJS': 'Vue',
+            'Node.js': 'Node.js',
+            'NodeJS': 'Node.js',
+            'Nodejs': 'Node.js',
+            'AWS': 'AWS',
+            'Amazon AWS': 'AWS',
+            'Amazon Web Services': 'AWS',
+        }
+        
+        return tech_aliases.get(tech, tech)
+    
+    def _get_tech_stack_data(self):
+        """Get and clean tech stack data from database"""
+        try:
+            query = f'''
+                SELECT "Id", "TechStack"
+                FROM "{self.db.config.POSTGRESQL_TABLE}"
                 WHERE "TechStack" IS NOT NULL
-                    AND "TechStack" != ''
-            """)
-            # Clean and normalize data
-            results = []
-            skipped_count = 0
-            for row in cur.fetchall():
-                if row[0]:  # Ensure not None
-                    tech = row[0].strip().strip('[]"\'')
-                    if tech:  # Ensure not empty string
-                        normalized_tech = normalize_tech_name(tech)
-                        if normalized_tech:  # Ensure normalized result not None
-                            results.append(normalized_tech)
+                AND "TechStack" != ''
+                AND "IsActive" = TRUE
+            '''
+            jobs = self.db.execute_query(query)
+            
+            tech_stacks = []
+            skipped = 0
+            
+            for job_id, tech_stack in jobs:
+                try:
+                    # Parse JSON array
+                    techs = json.loads(tech_stack)
+                    if not isinstance(techs, list):
+                        continue
+                        
+                    # Normalize and filter each tech
+                    for tech in techs:
+                        normalized = self._normalize_tech_name(tech)
+                        if normalized:
+                            tech_stacks.append(normalized)
                         else:
-                            skipped_count += 1
-
-            log_message(f"Successfully retrieved {len(results)} valid tech stack records")
-            log_message(f"Filtered out {skipped_count} invalid records")
-            return results
-    finally:
-        conn.close()
-        log_message("Database connection closed")
-
-def calculate_word_frequency() -> Dict[str, int]:
-    """Calculate word frequency statistics"""
-    log_message("Starting word frequency calculation...")
-    tech_stacks = get_tech_stack_data()
-
-    # Print first 10 sample records
-    log_message("Data samples (first 10):")
-    for i, tech in enumerate(tech_stacks[:10]):
-        print(f"    {i + 1}. {tech}")
-
-    word_freq = Counter(tech_stacks)
-    log_message(f"Word frequency calculation complete, found {len(word_freq)} unique tech stacks")
-    return dict(word_freq.most_common())
-
-def save_word_frequency(word_freq: Dict[str, int]) -> None:
-    """Save word frequency results to database (top 200 most common tech stacks only)"""
-    conn = connect_to_db()
-    try:
-        with conn.cursor() as cur:
-            log_message("Creating/updating word frequency table...")
-            cur.execute("""
+                            skipped += 1
+                            
+                except json.JSONDecodeError:
+                    self.logger.warning(f"Invalid JSON in tech stack for job {job_id}")
+                    continue
+                    
+            self.logger.info(f"Processed {len(jobs)} jobs")
+            self.logger.info(f"Found {len(tech_stacks)} valid technologies")
+            self.logger.info(f"Skipped {skipped} invalid entries")
+            
+            return tech_stacks
+            
+        except Exception as e:
+            self.logger.error(f"Error getting tech stack data: {str(e)}")
+            raise
+    
+    def _calculate_frequencies(self, tech_stacks):
+        """Calculate technology frequency statistics"""
+        try:
+            # Get word frequencies
+            word_freq = Counter(tech_stacks)
+            
+            # Convert to sorted list of tuples
+            freq_list = word_freq.most_common()
+            
+            self.logger.info(f"Found {len(freq_list)} unique technologies")
+            return freq_list
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating frequencies: {str(e)}")
+            raise
+    
+    def _save_frequencies(self, frequencies):
+        """Save frequency results to database"""
+        try:
+            # Create/update frequency table
+            create_table_query = '''
                 CREATE TABLE IF NOT EXISTS tech_word_frequency (
                     word VARCHAR(255) PRIMARY KEY,
                     frequency INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-
+            '''
+            self.db.execute_update(create_table_query)
+            
             # Clear existing data
-            log_message("Clearing existing word frequency data...")
-            cur.execute("TRUNCATE TABLE tech_word_frequency")
-
-            # Take only top 200 most common tech stacks
-            top_200_techs = dict(list(word_freq.items())[:200])
-
-            log_message(f"Starting to save top 200 most common tech stacks...")
-            count = 0
-            for word, freq in top_200_techs.items():
-                cur.execute("""
+            self.db.execute_update("TRUNCATE TABLE tech_word_frequency")
+            
+            # Insert new frequencies (top 200 only)
+            for word, freq in frequencies[:200]:
+                query = '''
                     INSERT INTO tech_word_frequency (word, frequency)
                     VALUES (%s, %s)
-                """, (word, freq))
-                count += 1
-                if count % 20 == 0:  # Print progress every 20 records
-                    log_message(f"Processed {count}/200 records")
-
-            conn.commit()
-            log_message(f"Successfully saved top 200 tech stack frequency data")
-    finally:
-        conn.close()
+                '''
+                self.db.execute_update(query, (word, freq))
+                
+            self.logger.info(f"Saved top 200 technology frequencies")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving frequencies: {str(e)}")
+            raise
+    
+    def process_all_jobs(self):
+        """Run complete technology stack analysis"""
+        try:
+            self.logger.info("Starting technology stack analysis...")
+            
+            # Get and clean data
+            tech_stacks = self._get_tech_stack_data()
+            
+            # Calculate frequencies
+            frequencies = self._calculate_frequencies(tech_stacks)
+            
+            # Save results
+            self._save_frequencies(frequencies)
+            
+            # Log top technologies
+            self.logger.info("\nTop 20 Technologies:")
+            for i, (tech, count) in enumerate(frequencies[:20], 1):
+                self.logger.info(f"{i:2d}. {tech:<30} : {count:5d}")
+            
+            self.logger.info("\nAnalysis complete")
+            
+        except Exception as e:
+            self.logger.error(f"Critical error in tech stack analysis: {str(e)}")
+            raise
 
 def main():
-    """Main function"""
+    """Main entry point for technology stack analysis"""
     try:
-        log_message("Starting tech stack frequency analysis...")
-
-        word_frequency = calculate_word_frequency()
-        save_word_frequency(word_frequency)
-
-        log_message("\nTop 20 most common tech stacks:")
-        for i, (word, count) in enumerate(list(word_frequency.items())[:20], 1):
-            print(f"{i:2d}. {word:<30} : {count:5d}")
-
-        total_techs = len(word_frequency)
-        log_message(f"\nAnalysis Summary:")
-        log_message(f"- Found {total_techs} unique tech stacks")
-        log_message(f"- Saved top 200 most common tech stacks to database")
-        log_message(f"- Unsaved tech stacks: {max(0, total_techs - 200)}")
-
-        log_message("Program execution completed")
-
+        # Initialize components
+        logger = Logger('tech_stats_analyzer')
+        db = DatabaseManager(config)
+        db.set_logger(logger)
+        
+        # Create analyzer and process jobs
+        analyzer = TechStatsAnalyzer(db, logger)
+        analyzer.process_all_jobs()
+        
     except Exception as e:
-        log_message(f"Program execution error: {e}")
+        logger.error(f"Failed to run tech stack analysis: {str(e)}")
         raise
 
 if __name__ == "__main__":

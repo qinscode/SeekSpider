@@ -2,259 +2,244 @@ import scrapy
 from scrapy import Request
 from urllib.parse import urlencode
 from scrapy.exceptions import CloseSpider
-from SeekSpider.items import SeekspiderItem
 from bs4 import BeautifulSoup
 import requests
+
+from SeekSpider.items import SeekspiderItem
+from SeekSpider.core.config import config
 from SeekSpider.utils.get_token import get_auth_token
-from SeekSpider.config import SEEK_USERNAME, SEEK_PASSWORD
-from SeekSpider.utils.ai_analysis import main as analyze_jobs
-from SeekSpider.utils.salary_normalizer import main as normalize_salaries
-from SeekSpider.utils.stats import main as analyze_tech_stats
+from SeekSpider.utils.ai_analysis import TechStackAnalyzer
+from SeekSpider.utils.salary_normalizer import SalaryNormalizer
+from SeekSpider.utils.stats import TechStatsAnalyzer
+from SeekSpider.core.database import DatabaseManager
+from SeekSpider.core.ai_client import AIClient
 
 class SeekSpider(scrapy.Spider):
     name = "seek"
     allowed_domains = ["www.seek.com.au"]
-    params = {
-    'siteKey': 'AU-Main',
-    'sourcesystem': 'houston',
-    'where': 'All Perth WA',
-    'page': 1,
-    'seekSelectAllPages': 'true',
-    'classification': '6281',
-    'subclassification': '',
-    'include': 'seodata',
-    'locale': 'en-AU',
-}
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-                      'AppleWebKit/605.1.15 (KHTML, like Gecko) '
-                      'Version/17.4.1 Safari/605.1.15',
-    }
     base_url = "https://www.seek.com.au/api/jobsearch/v5/me/search"
     jd_url = "https://www.seek.com.au/job/"
     remove_text = '(Information & Communication Technology)'
-
-    subclassification_dict = {
-        '6282': 'Architects',
-        '6283': 'Business/Systems Analysts',
-        '6284': 'Computer Operators',
-        '6285': 'Consultants',
-        '6286': 'Database Development & Administration',
-        '6287': 'Developers/Programmers',
-        '6288': 'Engineering - Hardware',
-        '6289': 'Engineering - Network',
-        '6290': 'Engineering - Software',
-        '6291': 'Help Desk & IT Support',
-        '6292': 'Management',
-        '6293': 'Networks & Systems Administration',
-        '6294': 'Product Management & Development',
-        '6295': 'Programme & Project Management',
-        '6296': 'Sales - Pre & Post',
-        '6297': 'Security',
-        '6298': 'Team Leaders',
-        '6299': 'Technical Writing',
-        '6300': 'Telecommunications',
-        '6301': 'Testing & Quality Assurance',
-        '6302': 'Web Development & Production',
-        '6303': 'Other'
-    }
-
-    current_subclass = ''
-
-    # Use Scrapy's logging system instead of printing to console
-    custom_settings = {
-        'LOG_LEVEL': 'INFO',
-    }
-
+    
     def __init__(self, *args, **kwargs):
         super(SeekSpider, self).__init__(*args, **kwargs)
+        
+        # Initialize core components
+        self.db = DatabaseManager(config)
+        self.db.set_logger(self.logger)
+        self.ai_client = AIClient(config)
+        
+        # Initialize scraped job IDs set
         self.scraped_job_ids = set()
         
-        # Get new authorization token
-        self.logger.info("Getting new authorization token...")
-        auth_token = get_auth_token(SEEK_USERNAME, SEEK_PASSWORD)
-
-        self.logger.info("Getting new authorization token...")
-
+        # Initialize search parameters
+        self.search_params = {
+            'siteKey': 'AU-Main',
+            'sourcesystem': 'houston',
+            'where': 'All Perth WA',
+            'page': 1,
+            'seekSelectAllPages': 'true',
+            'classification': '6281',
+            'subclassification': '',
+            'include': 'seodata',
+            'locale': 'en-AU',
+        }
+        
+        # Initialize headers
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                         'AppleWebKit/605.1.15 (KHTML, like Gecko) '
+                         'Version/17.4.1 Safari/605.1.15',
+        }
+        
+        # Job categories mapping
+        self.job_categories = {
+            '6282': 'Architects',
+            '6283': 'Business/Systems Analysts',
+            '6284': 'Computer Operators',
+            '6285': 'Consultants',
+            '6286': 'Database Development & Administration',
+            '6287': 'Developers/Programmers',
+            '6288': 'Engineering - Hardware',
+            '6289': 'Engineering - Network',
+            '6290': 'Engineering - Software',
+            '6291': 'Help Desk & IT Support',
+            '6292': 'Management',
+            '6293': 'Networks & Systems Administration',
+            '6294': 'Product Management & Development',
+            '6295': 'Programme & Project Management',
+            '6296': 'Sales - Pre & Post',
+            '6297': 'Security',
+            '6298': 'Team Leaders',
+            '6299': 'Technical Writing',
+            '6300': 'Telecommunications',
+            '6301': 'Testing & Quality Assurance',
+            '6302': 'Web Development & Production',
+            '6303': 'Other'
+        }
+        
+        # Get authentication token
+        self._setup_auth()
+        
+    def _setup_auth(self):
+        """Setup authentication token"""
+        self.logger.info("Getting authorization token...")
+        auth_token = get_auth_token(config.SEEK_USERNAME, config.SEEK_PASSWORD)
+        
         if not auth_token:
             raise Exception("Failed to get authorization token")
             
         self.headers['Authorization'] = auth_token
-        self.logger.info("Successfully obtained new authorization token")
-
+        self.logger.info("Successfully obtained authorization token")
+    
     def start_requests(self):
-        self.current_subclass,_ = self.subclassification_dict.popitem()
-        self.params['subclassification'] = self.current_subclass
-        self.logger.info(f'Starting subclass: {self.current_subclass}')
+        """Start the crawling process"""
+        # Get first category
+        self.current_category, _ = self.job_categories.popitem()
+        self.search_params['subclassification'] = self.current_category
+        
+        self.logger.info(f'Starting category: {self.current_category}')
         yield self.make_requests_from_url(self.base_url)
-
+    
     def make_requests_from_url(self, url):
-        query_string = urlencode(self.params)
+        """Create request with current parameters"""
+        query_string = urlencode(self.search_params)
         url = f"{url}?{query_string}"
-        self.logger.info("Starting search request.")
-        return Request(url, headers=self.headers, dont_filter=True, callback=self.parse)
-
+        
+        self.logger.info("Starting search request")
+        return Request(url, headers=self.headers, dont_filter=True)
+    
     def parse(self, response):
+        """Parse search results page"""
         raw_data = response.json()
         
-        # Get items_per_page from solMetadata.pageSize
-        items_per_page = raw_data.get('solMetadata', {}).get('pageSize', 20)  # Default to 20 if not found
+        # Get pagination info
+        items_per_page = raw_data.get('solMetadata', {}).get('pageSize', 20)
         total_count = raw_data.get('totalCount', 0)
-        total_pages = (total_count + items_per_page - 1) // items_per_page  # Round up division
+        total_pages = (total_count + items_per_page - 1) // items_per_page
         
-        self.logger.info(f'Total Count: {total_count}, Items Per Page: {items_per_page}, Total Pages: {total_pages}')
-
+        self.logger.info(
+            f'Total: {total_count}, Per Page: {items_per_page}, Pages: {total_pages}'
+        )
+        
+        # Process job listings
         for data in raw_data['data']:
             yield self.parse_job(data)
-
-        # if there are more pages to scrape, keep going with current subclass
-        if self.params['page'] < total_pages:
-            self.params['page'] += 1
-            next_page = self.get_next_page_url()
-            self.logger.info(f'Next Page: {self.params["page"]}, URL: {next_page}')
-            yield Request(next_page, headers=self.headers, dont_filter=True, callback=self.parse)
-
-        # if there are no more pages to scrape, move to the next subclass or close
+        
+        # Handle pagination
+        if self.search_params['page'] < total_pages:
+            yield from self._handle_next_page()
         else:
-            # subclassification_dict is not empty, move to the next subclass
-            if bool(self.subclassification_dict):
-                self.current_subclass, _ = self.subclassification_dict.popitem()
-                self.params['subclassification'] = self.current_subclass
-                self.params['page'] = 1
-                next_page = self.get_next_page_url()
-                self.logger.info(f'Next Subclass: {self.current_subclass}, URL: {next_page}')
-                yield Request(next_page, headers=self.headers, dont_filter=True, callback=self.parse)
-                pass
-
-            # if there are no more pages to scrape and no more subclasses, stop the spider
-            else:
-                self.logger.info('No more subclasses to scrape.')
-                raise CloseSpider('Reached last page of results')
-
-    def get_next_page_url(self):
-        query_string = urlencode(self.params)
-        return f"{self.base_url}?{query_string}"
-
+            yield from self._handle_next_category()
+    
+    def _handle_next_page(self):
+        """Handle pagination within current category"""
+        self.search_params['page'] += 1
+        next_page = self.make_requests_from_url(self.base_url)
+        self.logger.info(f'Next Page: {self.search_params["page"]}')
+        yield next_page
+    
+    def _handle_next_category(self):
+        """Handle moving to next category"""
+        if self.job_categories:
+            self.current_category, category_name = self.job_categories.popitem()
+            self.search_params['subclassification'] = self.current_category
+            self.search_params['page'] = 1
+            
+            # 构建完整URL用于日志
+            query_string = urlencode(self.search_params)
+            next_url = f"{self.base_url}?{query_string}"
+            
+            self.logger.info(f'Next Subclass: {self.current_category} ({category_name}), URL: {next_url}')
+            yield self.make_requests_from_url(self.base_url)
+        else:
+            self.logger.info('No more categories to scrape')
+            raise CloseSpider('Finished scraping all categories')
+    
     def parse_job(self, data):
+        """Parse individual job listing"""
         item = SeekspiderItem()
+        
+        # Basic job info
         item['job_id'] = data['id']
         self.scraped_job_ids.add(item['job_id'])
-
-        x = data.get('locations')
-        y = len(data['locations'])
-        # Get location from the first location in locations array
+        item['url'] = self.jd_url + str(data['id'])
+        item['job_title'] = data.get('title', '')
+        item['posted_date'] = data.get('listingDate', '')
+        
+        # Location info
         if data.get('locations') and len(data['locations']) > 0:
             item['area'] = data['locations'][0].get('label', '')
-        else:
-            item['area'] = ''
         
-        item['url'] = self.jd_url + str(data['id'])
-        
-        # Get advertiser info
+        # Advertiser info
         if 'advertiser' in data:
             item['advertiser_id'] = data['advertiser'].get('id', '')
             item['business_name'] = data['advertiser'].get('description', '')
         
-        item['job_title'] = data.get('title', '')
-        item['posted_date'] = data.get('listingDate', '')
-        
-        # Get work type from workTypes array
+        # Work type
         if data.get('workTypes') and len(data['workTypes']) > 0:
             item['work_type'] = data['workTypes'][0]
-        else:
-            item['work_type'] = ''
         
-        # Get salary information
+        # Salary info
         item['pay_range'] = data.get('salaryLabel', '')
         
-        # Get job description and other details from the job page
-        suburb, job_type, work_type, pay_range, content = self.fetch_job_description(item['url'])
-        item['suburb'] = suburb
-        item['job_type'] = job_type
-        # Only use work_type from job page if not already set
-        if not item['work_type']:
-            item['work_type'] = work_type
-        # Only use pay_range from job page if not already set
-        if not item['pay_range']:
-            item['pay_range'] = pay_range
-        item['job_description'] = str(content)
-
+        # Get detailed job info
+        self._enrich_job_details(item)
+        
         return item
-
-    def fetch_job_description(self, url):
-        response = requests.get(url, headers=self.headers)
-        soup = BeautifulSoup(response.text, 'lxml')
-
-
-        location = soup.find("span", attrs={"data-automation": "job-detail-location"})
-        location_text = location.text if location else None
-
-        classifications = soup.find("span", attrs={"data-automation": "job-detail-classifications"})
-        classifications_text = classifications.text if classifications else None
-
-        work_type = soup.find("span", attrs={"data-automation": "job-detail-work-type"})
-        work_type_text = work_type.text if work_type else None
-
-        salary = soup.find("span", attrs={"data-automation": "job-detail-salary"})
-        salary_text = salary.text if salary else None
-
-        job_details = soup.find("div", attrs={"data-automation": "jobAdDetails"})
-        # content = []
-        # full_content = ''
-        # if job_details:
-        #     for elem in job_details.recursiveChildGenerator():
-        #         if isinstance(elem, str) and elem.strip():
-        #             content.append(elem.strip())
-        #
-        #     # Join all non-empty strings with a single space
-        #     full_content = ' '.join(content)
-        #     print(full_content)
-        # else:
-        #     print("Job details not found")
-
-        return location_text,classifications_text,work_type_text,salary_text,job_details
-
-    def parse_advert_details(self, item, advert_details):
-        details_mapping = {
-            'suburb': 0,
-            'job_type': 1,
-            'work_type': 2,
-            'pay_range': 3
-        }
-        for key, index in details_mapping.items():
-            if len(advert_details) > index:
-                item[key] = advert_details[index].get_text().replace(self.remove_text, '').strip()
-            else:
-                item[key] = ''
-
-        # The pay range is optional, check if it exists
-        if len(advert_details) >= 4:
-            item['pay_range'] = advert_details[3].get_text()
-
-    def close(self, reason):
-        # This method is called when the spider is about to close
+    
+    def _enrich_job_details(self, item):
+        """Get additional job details from job page"""
+        try:
+            response = requests.get(item['url'], headers=self.headers)
+            soup = BeautifulSoup(response.text, 'lxml')
+            
+            # Extract location
+            location = soup.find("span", attrs={"data-automation": "job-detail-location"})
+            item['suburb'] = location.text if location else None
+            
+            # Extract job type
+            job_type = soup.find("span", attrs={"data-automation": "job-detail-work-type"})
+            if job_type and not item.get('work_type'):
+                item['work_type'] = job_type.text
+            
+            # Extract salary
+            salary = soup.find("span", attrs={"data-automation": "job-detail-salary"})
+            if salary and not item.get('pay_range'):
+                item['pay_range'] = salary.text
+            
+            # Extract job description
+            job_details = soup.find("div", attrs={"data-automation": "jobAdDetails"})
+            item['job_description'] = str(job_details) if job_details else None
+            
+        except Exception as e:
+            self.logger.error(f"Error enriching job {item['job_id']}: {str(e)}")
+    
+    def closed(self, reason):
+        """Handle spider closing"""
+        self.logger.info(f"Spider closing: {reason}")
+        
+        # Store scraped job IDs for later use
         self.crawler.stats.set_value('scraped_job_ids', self.scraped_job_ids)
         
-        # Run AI analysis after scraping is complete
-        self.logger.info("Starting AI analysis of job descriptions...")
+        # Run post-processing
         try:
-            analyze_jobs()
-            self.logger.info("AI analysis completed successfully")
+            self._run_post_processing()
         except Exception as e:
-            self.logger.error(f"Error during AI analysis: {str(e)}")
-
-        # Run salary normalization
-        self.logger.info("Starting salary normalization...")
-        try:
-            normalize_salaries()
-            self.logger.info("Salary normalization completed successfully")
-        except Exception as e:
-            self.logger.error(f"Error during salary normalization: {str(e)}")
-
-        # Run tech stack statistics analysis
-        self.logger.info("Starting tech stack statistics analysis...")
-        try:
-            analyze_tech_stats()
-            self.logger.info("Tech stack statistics analysis completed successfully")
-        except Exception as e:
-            self.logger.error(f"Error during tech stack analysis: {str(e)}")
+            self.logger.error(f"Post-processing error: {str(e)}")
+    
+    def _run_post_processing(self):
+        """Run post-scraping analysis"""
+        self.logger.info("Starting post-processing...")
+        
+        # Initialize analyzers
+        tech_analyzer = TechStackAnalyzer(self.db, self.ai_client, self.logger)
+        salary_normalizer = SalaryNormalizer(self.db, self.ai_client, self.logger)
+        stats_analyzer = TechStatsAnalyzer(self.db, self.logger)
+        
+        # Run analysis
+        tech_analyzer.process_all_jobs()
+        salary_normalizer.process_all_jobs()
+        stats_analyzer.process_all_jobs()
+        
+        self.logger.info("Post-processing complete")

@@ -7,6 +7,9 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from urllib.parse import urlencode
 import time
+from SeekSpider.core.logger import Logger
+
+logger = Logger('get_token')
 
 def get_login_url():
     """
@@ -67,76 +70,71 @@ def login_seek(username, password):
 
         if arch == 'aarch64':
             # For ARM64 architecture
-            print("Detected ARM64 architecture...")
-            # Use the ARM64 specific chrome installation
-            options.binary_location = "/usr/bin/chromium-browser"  # or the path to your Chrome/Chromium binary
-            service = Service('/usr/bin/chromedriver')  # or the path to your ARM64 chromedriver
+            logger.info("Detected ARM64 architecture...")
+            options.binary_location = "/usr/bin/chromium-browser"
+            service = Service('/usr/bin/chromedriver')
         else:
             # For other architectures, use WebDriver Manager
-            print(f"Detected {arch} architecture...")
+            logger.info(f"Detected {arch} architecture...")
             service = Service(ChromeDriverManager().install())
 
         driver = webdriver.Chrome(service=service, options=options)
 
         # Set page load timeout
         driver.set_page_load_timeout(30)
-        print("Browser initialized...")
+        logger.info("Browser initialized...")
 
         # Navigate to login page and handle form...
         login_url = get_login_url()
         driver.get(login_url)
         
-        wait = WebDriverWait(driver, 30)  # Increased wait time
-        print("Navigating to login page...")
+        wait = WebDriverWait(driver, 30)
+        logger.info("Navigating to login page...")
 
-        # Handle email input with better error handling
         try:
             email_input = wait.until(EC.presence_of_element_located((By.ID, "emailAddress")))
-            print("Email input field found...")
+            logger.info("Email input field found...")
             email_input.clear()
             email_input.send_keys(username)
-            print("Email entered...")
+            logger.info("Email entered...")
         except TimeoutException:
-            print("Email input field not found - please check the login page")
+            logger.error("Email input field not found - please check the login page")
             driver.quit()
             return None
 
-        # Handle password input with delay
         try:
             password_input = wait.until(EC.presence_of_element_located((By.ID, "password")))
-            print("Password input field found...")
+            logger.info("Password input field found...")
             password_input.clear()
             password_input.send_keys(password)
-            print("Password entered...")
+            logger.info("Password entered...")
 
-            time.sleep(2)  # Added delay before clicking
+            time.sleep(2)
         except TimeoutException:
-            print("Password input field not found - please check the login page")
+            logger.error("Password input field not found - please check the login page")
             driver.quit()
             return None
 
-        # Handle login button click with better error handling
         try:
             sign_in_button = wait.until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-cy='login']"))
             )
-            print("Login button found...")
+            logger.info("Login button found...")
             sign_in_button.click()
-            print("Login button clicked...")
+            logger.info("Login button clicked...")
             
-            time.sleep(5)  # Added delay after clicking
-            print("Waiting for login to complete...")
+            time.sleep(5)
+            logger.info("Waiting for login to complete...")
         except TimeoutException:
-            print("Login button not found - please check the login page")
+            logger.error("Login button not found - please check the login page")
             driver.quit()
             return None
 
-        # Check login success and save debug info
         try:
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-automation="account name"]')))
             
             # Get and print auth0 token info
-            print("\nAuth0 Token:")
+            logger.info("\nAuth0 Token:")
             auth0_token = driver.execute_script(
                 "var items = {}; "
                 "for (var i = 0, len = localStorage.length; i < len; ++i) { "
@@ -152,22 +150,22 @@ def login_seek(username, password):
                     import json
                     token_data = json.loads(value)
                     access_token = token_data.get('body', {}).get('access_token')
-                    print(f"\nAccess Token:")
-                    print(access_token)
+                    logger.info("\nAccess Token:")
+                    logger.info(access_token)
                 except json.JSONDecodeError:
-                    print("Error parsing JSON token data")
+                    logger.error("Error parsing JSON token data")
                 except Exception as e:
-                    print(f"Error processing token: {str(e)}")
+                    logger.error(f"Error processing token: {str(e)}")
 
             return driver
 
         except TimeoutException:
-            print("Login might have failed - please check credentials")
+            logger.error("Login might have failed - please check credentials")
             driver.quit()
             return None
 
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
+        logger.error(f"An error occurred: {str(e)}")
         if 'driver' in locals():
             driver.quit()
         return None
@@ -186,6 +184,7 @@ def get_auth_token(username, password):
     """
     browser_session = None
     try:
+        logger.info("Getting authorization token...")
         browser_session = login_seek(username, password)
         if browser_session:
             auth0_token = browser_session.execute_script(
@@ -205,16 +204,16 @@ def get_auth_token(username, password):
                     token_data = json.loads(value)
                     access_token = token_data.get('body', {}).get('access_token')
                     if access_token:
-                        print("Successfully obtained authentication token")
+                        logger.info("Successfully obtained authentication token")
                         return f"Bearer {access_token}"
                 except json.JSONDecodeError:
-                    print("Error parsing JSON token data")
+                    logger.error("Error parsing JSON token data")
                     continue
                 except Exception as e:
-                    print(f"Error processing token: {str(e)}")
+                    logger.error(f"Error processing token: {str(e)}")
                     continue
                     
-            print("No valid token found in browser session")
+            logger.warning("No valid token found in browser session")
             return None
     finally:
         if browser_session:
