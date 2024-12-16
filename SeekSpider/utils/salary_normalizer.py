@@ -78,8 +78,7 @@ class SalaryNormalizer:
             # Update database
             self.db.update_job(job_id, {
                 "MinSalary": salary_range[0],
-                "MaxSalary": salary_range[1],
-                "UpdatedAt": datetime.now()
+                "MaxSalary": salary_range[1]
             })
 
             self.logger.info(
@@ -94,12 +93,44 @@ class SalaryNormalizer:
     def process_all_jobs(self):
         """Process all jobs needing salary normalization"""
         try:
-            # Get jobs needing processing
+            # 首先检查数据情况
+            debug_query = f'''
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(CASE WHEN "PayRange" IS NULL THEN 1 END) as null_payrange,
+                    COUNT(CASE WHEN "PayRange" = '' THEN 1 END) as empty_payrange,
+                    COUNT(CASE WHEN "MinSalary" IS NULL THEN 1 END) as null_min_salary,
+                    COUNT(CASE WHEN "MaxSalary" IS NULL THEN 1 END) as null_max_salary
+                FROM "{self.db.config.POSTGRESQL_TABLE}"
+            '''
+            debug_result = self.db.execute_query(debug_query)
+            self.logger.info("Database status:")
+            self.logger.info(f"Total records: {debug_result[0][0]}")
+            self.logger.info(f"Null PayRange: {debug_result[0][1]}")
+            self.logger.info(f"Empty PayRange: {debug_result[0][2]}")
+            self.logger.info(f"Null MinSalary: {debug_result[0][3]}")
+            self.logger.info(f"Null MaxSalary: {debug_result[0][4]}")
+
+            # 首先批量更新空的 PayRange
+            batch_update_query = f'''
+                UPDATE "{self.db.config.POSTGRESQL_TABLE}"
+                SET 
+                    "MinSalary" = 0,
+                    "MaxSalary" = 0,
+                    "UpdatedAt" = now()
+                WHERE ("MinSalary" IS NULL OR "MaxSalary" IS NULL)
+                AND ("PayRange" IS NULL OR TRIM("PayRange") = '')
+            '''
+            affected_rows = self.db.execute_update(batch_update_query)
+            self.logger.info(f"Batch updated {affected_rows} jobs with empty PayRange to zero salary")
+
+            # 然后处理有薪资信息的工作
             query = f'''
                 SELECT "Id", "PayRange"
                 FROM "{self.db.config.POSTGRESQL_TABLE}" 
                 WHERE ("MinSalary" IS NULL OR "MaxSalary" IS NULL)
                 AND "PayRange" IS NOT NULL
+                AND TRIM("PayRange") != ''
             '''
             jobs = self.db.execute_query(query)
 
@@ -108,6 +139,7 @@ class SalaryNormalizer:
 
             processed = 0
             errors = 0
+            error_details = []
 
             # Process each job
             for job_id, pay_range in jobs:
@@ -117,19 +149,41 @@ class SalaryNormalizer:
                         processed += 1
                     else:
                         errors += 1
+                        error_details.append({
+                            'job_id': job_id,
+                            'pay_range': pay_range,
+                            'result': 'Zero salary range'
+                        })
                 except Exception as e:
                     self.logger.error(f"Failed to process job {job_id}: {str(e)}")
                     errors += 1
+                    error_details.append({
+                        'job_id': job_id,
+                        'pay_range': pay_range,
+                        'error': str(e)
+                    })
                     continue
 
             # Log summary
             self.logger.info("\nSalary Normalization Summary:")
-            self.logger.info(f"Total jobs: {total_jobs}")
+            self.logger.info(f"Total jobs with empty PayRange: {affected_rows}")
+            self.logger.info(f"Total jobs with PayRange: {total_jobs}")
             self.logger.info(f"Successfully processed: {processed}")
             self.logger.info(f"Errors: {errors}")
             if total_jobs > 0:
                 success_rate = ((total_jobs - errors) / total_jobs * 100)
                 self.logger.info(f"Success rate: {success_rate:.2f}%")
+            
+            if error_details:
+                self.logger.info("\nError Details:")
+                for detail in error_details:
+                    self.logger.info(f"Job ID: {detail['job_id']}")
+                    self.logger.info(f"Pay Range: {detail['pay_range']}")
+                    if 'error' in detail:
+                        self.logger.info(f"Error: {detail['error']}")
+                    else:
+                        self.logger.info(f"Result: {detail['result']}")
+                    self.logger.info("---")
 
         except Exception as e:
             self.logger.error(f"Critical error in salary normalization: {str(e)}")

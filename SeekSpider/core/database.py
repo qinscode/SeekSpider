@@ -85,6 +85,17 @@ class DatabaseManager:
         self.log('info', f'Inserted job with ID: {job_data.get("Id")}')
 
     def update_job(self, job_id, job_data):
+        """
+        Update a job record in the database.
+        
+        Args:
+            job_id: The ID of the job to update
+            job_data: Dictionary containing the fields to update
+            
+        Note:
+            UpdatedAt field is automatically set to current timestamp,
+            do not include it in job_data.
+        """
         set_clause = ', '.join([f'"{k}" = %s' for k in job_data.keys()])
         query = f'''
             UPDATE "{self.config.POSTGRESQL_TABLE}"

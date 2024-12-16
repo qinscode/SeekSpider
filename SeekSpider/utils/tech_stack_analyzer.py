@@ -1,12 +1,44 @@
 import json
 import os
+import time
 from datetime import datetime
+from functools import wraps
 
 from SeekSpider.core.ai_client import AIClient
 from SeekSpider.core.config import config
 from SeekSpider.core.database import DatabaseManager
 from SeekSpider.core.logger import Logger
 
+def retry_on_db_error(max_retries=3, delay=5):
+    """
+    数据库操作重试装饰器
+    
+    Args:
+        max_retries (int): 最大重试次数
+        delay (int): 重试间隔（秒）
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            retries = 0
+            while retries < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    retries += 1
+                    if "Cannot allocate memory" in str(e) or "connection" in str(e).lower():
+                        self = args[0]  # 获取类实例
+                        self.logger.warning(
+                            f"Database operation failed (attempt {retries}/{max_retries}): {str(e)}"
+                            f"\nRetrying in {delay} seconds..."
+                        )
+                        if retries < max_retries:
+                            time.sleep(delay)
+                            continue
+                    raise
+            raise Exception(f"Failed after {max_retries} retries")
+        return wrapper
+    return decorator
 
 class TechStackAnalyzer:
     def __init__(self, db_manager, ai_client, logger):
@@ -47,6 +79,7 @@ class TechStackAnalyzer:
             self.logger.warning(f"Failed to parse response: {response_text}")
             return []
 
+    @retry_on_db_error()
     def analyze_job(self, job_id, description):
         """Analyze a single job's tech stack"""
         try:
@@ -66,8 +99,7 @@ class TechStackAnalyzer:
 
             # Update database
             self.db.update_job(job_id, {
-                "TechStack": json.dumps(tech_stack),
-                "UpdatedAt": datetime.now()
+                "TechStack": json.dumps(tech_stack)
             })
 
             self.logger.info(f"Successfully analyzed job {job_id}: {tech_stack}")
@@ -75,8 +107,9 @@ class TechStackAnalyzer:
 
         except Exception as e:
             self.logger.error(f"Error analyzing job {job_id}: {str(e)}")
-            return None
+            raise  # 让装饰器捕获异常并进行重试
 
+    @retry_on_db_error()
     def process_all_jobs(self):
         """Process all unprocessed jobs"""
         try:
