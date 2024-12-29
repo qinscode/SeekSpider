@@ -1,0 +1,33 @@
+services:
+  selenium:
+    image: selenium/standalone-chromium:latest
+    container_name: selenium
+    shm_size: 2g
+    ports:
+      - "4444:4444"
+      - "7900:7900"
+    networks:
+      - spider_network
+
+  seekspider:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: seekspider
+    depends_on:
+      - selenium
+    environment:
+      - RUNNING_IN_CONTAINER=true
+      - SELENIUM_URL=http://selenium:4444/wd/hub  # 添加这行
+      - TZ=Australia/Sydney
+    env_file:
+      - .env
+    networks:
+      - spider_network
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+networks:
+  spider_network:
+    driver: bridge

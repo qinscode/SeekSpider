@@ -107,7 +107,9 @@ def login_seek(username, password):
         options.add_argument(
             '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36')
 
-        selenium_url = "http://localhost:4444/wd/hub"
+        selenium_host = os.getenv('SELENIUM_HOST', 'selenium')
+        selenium_port = os.getenv('SELENIUM_PORT', '4444')
+        selenium_url = f'http://{selenium_host}:{selenium_port}/wd/hub'
 
         if is_running_in_container():
             driver = webdriver.Remote(command_executor=selenium_url, options=options)
