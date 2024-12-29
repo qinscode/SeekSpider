@@ -1,7 +1,7 @@
+import os
 import time
 from urllib.parse import urlencode
 
-import os
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
@@ -23,7 +23,7 @@ def is_running_in_container():
     """
     # Method 1: Check if /.dockerenv file exists
     docker_env = os.path.exists('/.dockerenv')
-    
+
     # Method 2: Check cgroup file content
     cgroup = False
     try:
@@ -31,8 +31,9 @@ def is_running_in_container():
             cgroup = 'docker' in f.read() or 'kubepods' in f.read()
     except FileNotFoundError:
         pass
-    
+
     return docker_env or cgroup
+
 
 def get_login_url():
     """
@@ -90,22 +91,23 @@ def login_seek(username, password):
         options.add_argument('--disable-notifications')
         options.add_argument('--disable-popup-blocking')
         options.add_argument('--ignore-certificate-errors')
-        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36')
+        options.add_argument(
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36')
 
         # 使用 snap 版本的 ChromeDriver
         CHROME_DRIVER_PATH = '/snap/chromium/current/usr/lib/chromium-browser/chromedriver'
         CHROME_BINARY_PATH = '/snap/bin/chromium'
 
         selenium_url = "http://localhost:4444/wd/hub"
-        
+
         if is_running_in_container():
             driver = webdriver.Remote(command_executor=selenium_url, options=options)
             driver.set_page_load_timeout(30)
 
         else:
-            service = Service(executable_path='/usr/bin/chromedriver')
+            service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
-            
+
             try:
                 driver = webdriver.Chrome(service=service, options=options)
                 driver.set_page_load_timeout(30)
@@ -119,7 +121,7 @@ def login_seek(username, password):
                     driver_version = subprocess.check_output([CHROME_DRIVER_PATH, '--version']).decode().strip()
                     logger.error(f"Chrome version: {chrome_version}")
                     logger.error(f"ChromeDriver version: {driver_version}")
-                    
+
                     chrome_perms = oct(os.stat(CHROME_BINARY_PATH).st_mode)[-3:]
                     driver_perms = oct(os.stat(CHROME_DRIVER_PATH).st_mode)[-3:]
                     logger.error(f"Chrome permissions: {chrome_perms}")
@@ -127,13 +129,12 @@ def login_seek(username, password):
                 except Exception as version_error:
                     logger.error(f"Failed to get version info: {str(version_error)}")
                 raise
-        
+
         # 添加详细的日志记录
         logger.info(f"Chrome binary location: {options.binary_location}")
         logger.info(f"ChromeDriver path: {service.path}")
         logger.info("Initializing Chrome WebDriver...")
         driver.set_page_load_timeout(30)
-
 
         # Navigate to login page and handle form...
         login_url = get_login_url()
