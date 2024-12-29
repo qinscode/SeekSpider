@@ -117,6 +117,7 @@ def login_seek(username, password):
 
             service = Service(get_chromedriver_path())
             driver = webdriver.Chrome(service=service, options=options)
+            logger.info(f"ChromeDriver path: {service.path}")
 
             try:
                 driver = webdriver.Chrome(service=service, options=options)
@@ -127,7 +128,6 @@ def login_seek(username, password):
 
         # add the binary location
         logger.info(f"Chrome binary location: {options.binary_location}")
-        logger.info(f"ChromeDriver path: {service.path}")
         logger.info("Initializing Chrome WebDriver...")
         driver.set_page_load_timeout(30)
 
