@@ -1,4 +1,5 @@
 import os
+import platform
 import time
 from urllib.parse import urlencode
 
@@ -74,6 +75,19 @@ def get_login_url():
     return url
 
 
+def get_chromedriver_path():
+    """
+        return the path of chromedriver based on the OS
+    """
+    system = platform.system().lower()
+    if system == "darwin":  # macOS
+        return "/opt/homebrew/bin/chromedriver"
+    elif system == "linux":  # Linux (Ubuntu)
+        return "/usr/bin/chromedriver"
+    else:
+        return "chromedriver"
+
+
 def login_seek(username, password):
     try:
         options = webdriver.ChromeOptions()
@@ -93,10 +107,6 @@ def login_seek(username, password):
         options.add_argument(
             '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36')
 
-        # 使用 snap 版本的 ChromeDriver
-        CHROME_DRIVER_PATH = '/snap/chromium/current/usr/lib/chromium-browser/chromedriver'
-        CHROME_BINARY_PATH = '/snap/bin/chromium'
-
         selenium_url = "http://localhost:4444/wd/hub"
 
         if is_running_in_container():
@@ -104,7 +114,8 @@ def login_seek(username, password):
             driver.set_page_load_timeout(30)
 
         else:
-            service = Service(executable_path='/usr/bin/chromedriver')
+
+            service = Service(get_chromedriver_path())
             driver = webdriver.Chrome(service=service, options=options)
 
             try:
@@ -113,23 +124,8 @@ def login_seek(username, password):
                 logger.info("Chrome WebDriver initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize Chrome WebDriver: {str(e)}")
-                # 尝试获取更多诊断信息
-                import subprocess
-                try:
-                    chrome_version = subprocess.check_output([CHROME_BINARY_PATH, '--version']).decode().strip()
-                    driver_version = subprocess.check_output([CHROME_DRIVER_PATH, '--version']).decode().strip()
-                    logger.error(f"Chrome version: {chrome_version}")
-                    logger.error(f"ChromeDriver version: {driver_version}")
 
-                    chrome_perms = oct(os.stat(CHROME_BINARY_PATH).st_mode)[-3:]
-                    driver_perms = oct(os.stat(CHROME_DRIVER_PATH).st_mode)[-3:]
-                    logger.error(f"Chrome permissions: {chrome_perms}")
-                    logger.error(f"ChromeDriver permissions: {driver_perms}")
-                except Exception as version_error:
-                    logger.error(f"Failed to get version info: {str(version_error)}")
-                raise
-
-        # 添加详细的日志记录
+        # add the binary location
         logger.info(f"Chrome binary location: {options.binary_location}")
         logger.info(f"ChromeDriver path: {service.path}")
         logger.info("Initializing Chrome WebDriver...")
