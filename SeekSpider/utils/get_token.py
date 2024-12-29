@@ -114,9 +114,11 @@ def login_seek(username, password):
         logger.info(f"Selenium URL: {selenium_url}")
 
         if is_running_in_container():
-            logger.info("Running in container - using remote WebDriver")
             driver = webdriver.Remote(command_executor=selenium_url, options=options)
+            driver.set_page_load_timeout(30)
+
         else:
+
             service = Service(get_chromedriver_path())
             driver = webdriver.Chrome(service=service, options=options)
             logger.info(f"ChromeDriver path: {service.path}")
