@@ -8,7 +8,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from webdriver_manager.chrome import ChromeDriverManager
 
 from SeekSpider.core.logger import Logger
 
@@ -105,7 +104,7 @@ def login_seek(username, password):
             driver.set_page_load_timeout(30)
 
         else:
-            service = Service(ChromeDriverManager().install())
+            service = Service(executable_path='/usr/bin/chromedriver')
             driver = webdriver.Chrome(service=service, options=options)
 
             try:
