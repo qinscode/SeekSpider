@@ -107,16 +107,18 @@ def login_seek(username, password):
         options.add_argument(
             '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36')
 
-        selenium_host = os.getenv('SELENIUM_HOST', 'selenium')
+        selenium_host = os.getenv('SELENIUM_HOST', 'localhost')
         selenium_port = os.getenv('SELENIUM_PORT', '4444')
         selenium_url = f'http://{selenium_host}:{selenium_port}/wd/hub'
 
+        logger.info(f"Selenium URL: {selenium_url}")
+
         if is_running_in_container():
+            logger.info("Running in container - using remote WebDriver")
             driver = webdriver.Remote(command_executor=selenium_url, options=options)
             driver.set_page_load_timeout(30)
 
         else:
-
             service = Service(get_chromedriver_path())
             driver = webdriver.Chrome(service=service, options=options)
             logger.info(f"ChromeDriver path: {service.path}")

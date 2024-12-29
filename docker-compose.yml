@@ -6,8 +6,6 @@ services:
     ports:
       - "4444:4444"
       - "7900:7900"
-    networks:
-      - spider_network
 
   seekspider:
     build:
@@ -17,17 +15,11 @@ services:
     depends_on:
       - selenium
     environment:
-      - RUNNING_IN_CONTAINER=true
-      - SELENIUM_URL=http://selenium:4444/wd/hub  # 添加这行
-      - TZ=Australia/Sydney
+      - SELENIUM_HOST=selenium
+      - SELENIUM_PORT=4444
+      - TZ=Australia/Perth
     env_file:
       - .env
-    networks:
-      - spider_network
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-
-networks:
-  spider_network:
-    driver: bridge

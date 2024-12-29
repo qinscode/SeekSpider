@@ -10,11 +10,8 @@ RUN apt-get update -y && apt-get install -y \
 
 WORKDIR /app
 
-# 克隆项目
-RUN git clone https://github.com/qinscode/SeekSpider.git .
-
-# 复制修改后的 requirements.txt
-COPY requirements.txt .
+# 复制当前目录的所有文件到容器
+COPY . /app
 
 # 创建并激活虚拟环境
 RUN python3 -m venv /app/venv

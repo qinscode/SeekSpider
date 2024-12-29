@@ -5,7 +5,7 @@ __pycache__
 .Python
 env/
 venv/
-.env
+
 .git
 .gitignore
 .pytest_cache/
