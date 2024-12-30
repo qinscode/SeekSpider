@@ -88,60 +88,83 @@ def get_chromedriver_path():
         return "chromedriver"
 
 
+def get_selenium_grid_url():
+    """
+    动态获取 Selenium Grid URL，支持多种环境
+    """
+    # 优先使用环境变量中的 SELENIUM_HOST
+    selenium_host = os.getenv('SELENIUM_HOST', 'selenium')
+    selenium_port = os.getenv('SELENIUM_PORT', '4444')
+
+    selenium_url = f'http://{selenium_host}:{selenium_port}/wd/hub'
+    logger.info(f"Using Selenium Grid URL: {selenium_url}")
+
+    return selenium_url
+
+
 def login_seek(username, password):
-    try:
-        options = webdriver.ChromeOptions()
-        options.add_argument('--headless=new')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920,1080')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('--disable-extensions')
-        options.add_argument('--disable-setuid-sandbox')
-        options.add_argument('--no-first-run')
-        options.add_argument('--no-default-browser-check')
-        options.add_argument('--disable-notifications')
-        options.add_argument('--disable-popup-blocking')
-        options.add_argument('--ignore-certificate-errors')
-        options.add_argument(
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36')
+    max_retries = 3
+    retry_delay = 5
 
-        selenium_host = os.getenv('SELENIUM_HOST', 'localhost')
-        selenium_port = os.getenv('SELENIUM_PORT', '4444')
-        selenium_url = f'http://{selenium_host}:{selenium_port}/wd/hub'
+    for attempt in range(max_retries):
+        try:
+            options = webdriver.ChromeOptions()
+            options.add_argument('--headless=new')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--disable-setuid-sandbox')
+            options.add_argument('--no-first-run')
+            options.add_argument('--no-default-browser-check')
+            options.add_argument('--disable-notifications')
+            options.add_argument('--disable-popup-blocking')
+            options.add_argument('--ignore-certificate-errors')
+            options.add_argument(
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.85 Safari/537.36')
 
-        logger.info(f"Selenium URL: {selenium_url}")
+            selenium_url = get_selenium_grid_url()
+            logger.info(f"Attempt {attempt + 1}/{max_retries}: Connecting to Selenium at {selenium_url}")
 
-        if is_running_in_container():
-            driver = webdriver.Remote(command_executor=selenium_url, options=options)
+            if is_running_in_container():
+                logger.info("Running in container - using remote WebDriver")
+                driver = webdriver.Remote(
+                    command_executor=selenium_url,
+                    options=options
+                )
+                logger.info("Remote Chrome WebDriver initialized successfully")
+            else:
+                service = Service(get_chromedriver_path())
+                driver = webdriver.Chrome(service=service, options=options)
+                logger.info(f"ChromeDriver path: {service.path}")
+
             driver.set_page_load_timeout(30)
 
-        else:
+            # 如果成功创建了driver，继续执行登录逻辑
+            return handle_login(driver, username, password)
 
-            service = Service(get_chromedriver_path())
-            driver = webdriver.Chrome(service=service, options=options)
-            logger.info(f"ChromeDriver path: {service.path}")
+        except Exception as e:
+            logger.error(f"Attempt {attempt + 1}/{max_retries} failed: {str(e)}")
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("All attempts failed")
+                raise
 
-            try:
-                driver = webdriver.Chrome(service=service, options=options)
-                driver.set_page_load_timeout(30)
-                logger.info("Chrome WebDriver initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize Chrome WebDriver: {str(e)}")
 
-        # add the binary location
-        logger.info(f"Chrome binary location: {options.binary_location}")
-        logger.info("Initializing Chrome WebDriver...")
-        driver.set_page_load_timeout(30)
-
-        # Navigate to login page and handle form...
+def handle_login(driver, username, password):
+    """处理登录逻辑的辅助函数"""
+    try:
         login_url = get_login_url()
         driver.get(login_url)
 
         wait = WebDriverWait(driver, 30)
         logger.info("Navigating to login page...")
 
+        # 等待并填写邮箱
         try:
             email_input = wait.until(EC.presence_of_element_located((By.ID, "emailAddress")))
             logger.info("Email input field found...")
@@ -149,23 +172,22 @@ def login_seek(username, password):
             email_input.send_keys(username)
             logger.info("Email entered...")
         except TimeoutException:
-            logger.error("Email input field not found - please check the login page")
-            driver.quit()
-            return None
+            logger.error("Email input field not found")
+            raise
 
+        # 等待并填写密码
         try:
             password_input = wait.until(EC.presence_of_element_located((By.ID, "password")))
             logger.info("Password input field found...")
             password_input.clear()
             password_input.send_keys(password)
             logger.info("Password entered...")
-
             time.sleep(2)
         except TimeoutException:
-            logger.error("Password input field not found - please check the login page")
-            driver.quit()
-            return None
+            logger.error("Password input field not found")
+            raise
 
+        # 点击登录按钮
         try:
             sign_in_button = wait.until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-cy='login']"))
@@ -173,19 +195,16 @@ def login_seek(username, password):
             logger.info("Login button found...")
             sign_in_button.click()
             logger.info("Login button clicked...")
-
-            time.sleep(5)
-            logger.info("Waiting for login to complete...")
         except TimeoutException:
-            logger.error("Login button not found - please check the login page")
-            driver.quit()
-            return None
+            logger.error("Login button not found")
+            raise
 
+        # 验证登录成功
         try:
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '[data-automation="account name"]')))
+            logger.info("Login successful")
 
-            # Get and print auth0 token info
-            logger.info("\nAuth0 Token:")
+            # 获取 auth0 token
             auth0_token = driver.execute_script(
                 "var items = {}; "
                 "for (var i = 0, len = localStorage.length; i < len; ++i) { "
@@ -196,30 +215,23 @@ def login_seek(username, password):
                 "} "
                 "return items;"
             )
-            for key, value in auth0_token.items():
-                try:
-                    import json
-                    token_data = json.loads(value)
-                    access_token = token_data.get('body', {}).get('access_token')
-                    logger.info("\nAccess Token:")
-                    logger.info(access_token)
-                except json.JSONDecodeError:
-                    logger.error("Error parsing JSON token data")
-                except Exception as e:
-                    logger.error(f"Error processing token: {str(e)}")
 
+            if not auth0_token:
+                logger.error("No auth0 token found")
+                raise Exception("No auth0 token found")
+
+            logger.info("Auth0 token retrieved successfully")
             return driver
 
         except TimeoutException:
-            logger.error("Login might have failed - please check credentials")
-            driver.quit()
-            return None
+            logger.error("Login verification failed")
+            raise Exception("Login verification failed")
 
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
-        if 'driver' in locals():
+        logger.error(f"Login failed: {str(e)}")
+        if driver:
             driver.quit()
-        return None
+        raise
 
 
 def get_auth_token(username, password):

@@ -6,6 +6,22 @@ services:
     ports:
       - "4444:4444"
       - "7900:7900"
+    environment:
+      - SE_NODE_MAX_SESSIONS=1
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_NODE_SESSION_TIMEOUT=300
+      - SE_START_XVFB=true
+      - SE_SCREEN_WIDTH=1920
+      - SE_SCREEN_HEIGHT=1080
+      - SE_SCREEN_DEPTH=24
+    networks:
+      - scraping_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   seekspider:
     build:
@@ -13,7 +29,8 @@ services:
       dockerfile: Dockerfile
     container_name: seekspider
     depends_on:
-      - selenium
+      selenium:
+        condition: service_healthy
     environment:
       - SELENIUM_HOST=selenium
       - SELENIUM_PORT=4444
@@ -23,3 +40,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+    networks:
+      - scraping_network
+
+networks:
+  scraping_network:
+    driver: bridge
