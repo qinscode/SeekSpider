@@ -14,6 +14,8 @@ services:
       - SE_SCREEN_WIDTH=1920
       - SE_SCREEN_HEIGHT=1080
       - SE_SCREEN_DEPTH=24
+      - OTEL_SDK_DISABLED=true
+      - DISABLE_TRACING=true
     networks:
       - scraping_network
     healthcheck:
@@ -22,6 +24,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200m"
+        max-file: "10"
+        compress: "true"
+    volumes:
+      - ./logs/selenium:/var/log/selenium
 
   seekspider:
     build:
@@ -39,9 +49,15 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-      - ./logs:/app/logs
+      - ./logs/spider:/app/logs
     networks:
       - scraping_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200m"
+        max-file: "10"
+        compress: "true"
 
 networks:
   scraping_network:
