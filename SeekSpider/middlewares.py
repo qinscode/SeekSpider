@@ -6,7 +6,66 @@
 from scrapy import signals
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
 from scrapy.utils.response import response_status_message
+import os
+import logging
+from datetime import datetime
+
 # useful for handling different item types with a single interface
+
+
+class LoggerMiddleware:
+    @classmethod
+    def from_crawler(cls, crawler):
+        middleware = cls()
+        crawler.signals.connect(middleware.spider_opened, signal=signals.spider_opened)
+        crawler.signals.connect(middleware.spider_closed, signal=signals.spider_closed)
+        return middleware
+
+    def spider_opened(self, spider):
+        try:
+            # 创建日志目录
+            log_dir = os.path.join(os.getcwd(), 'logs', 'spider')
+            os.makedirs(log_dir, exist_ok=True)
+
+            # 创建日志文件名（使用当前时间）
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            log_file = os.path.join(log_dir, f'spider_{timestamp}.log')
+
+            # 创建文件处理器
+            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s [%(name)s] %(levelname)s: %(message)s'
+            ))
+            
+            # 获取根logger并添加处理器
+            root_logger = logging.getLogger()
+            root_logger.addHandler(file_handler)
+            
+            # 保存handler引用以便后续关闭
+            spider.log_handler = file_handler
+            
+            # 使用spider的logger记录开始信息
+            spider.logger.info(f"Spider started. Logging to: {log_file}")
+
+        except Exception as e:
+            spider.logger.error(f"Failed to setup logging: {str(e)}")
+
+    def spider_closed(self, spider):
+        try:
+            # 关闭日志处理器
+            if hasattr(spider, 'log_handler'):
+                # 记录关闭信息
+                spider.logger.info("Spider closed. Log file saved.")
+                
+                # 从根logger中移除处理器
+                root_logger = logging.getLogger()
+                root_logger.removeHandler(spider.log_handler)
+                
+                # 关闭处理器
+                spider.log_handler.close()
+                
+        except Exception as e:
+            spider.logger.error(f"Error closing log handler: {str(e)}")
 
 
 class SeekspiderSpiderMiddleware:

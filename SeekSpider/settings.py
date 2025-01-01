@@ -45,6 +45,7 @@ DOWNLOAD_DELAY = 2
 # Enable or disable spider middlewares
 # See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 SPIDER_MIDDLEWARES = {
+    "SeekSpider.middlewares.LoggerMiddleware": 100,
     "SeekSpider.middlewares.SeekspiderSpiderMiddleware": 543,
     'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
     'scrapy_fake_useragent.middleware.RandomUserAgentMiddleware': 400,
