@@ -182,7 +182,6 @@ def handle_login(driver, username, password):
             password_input.clear()
             password_input.send_keys(password)
             logger.info("Password entered...")
-            time.sleep(2)
         except TimeoutException:
             logger.error("Password input field not found")
             raise

@@ -10,7 +10,6 @@ from SeekSpider.core.ai_client import AIClient
 from SeekSpider.core.config import config
 from SeekSpider.core.database import DatabaseManager
 from SeekSpider.items import SeekspiderItem
-from SeekSpider.utils.get_token import get_auth_token
 from SeekSpider.utils.salary_normalizer import SalaryNormalizer
 from SeekSpider.utils.tech_frequency_analyzer import TechStatsAnalyzer
 from SeekSpider.utils.tech_stack_analyzer import TechStackAnalyzer
@@ -19,7 +18,7 @@ from SeekSpider.utils.tech_stack_analyzer import TechStackAnalyzer
 class SeekSpider(scrapy.Spider):
     name = "seek"
     allowed_domains = ["www.seek.com.au"]
-    base_url = "https://www.seek.com.au/api/jobsearch/v5/me/search"
+    base_url = "https://www.seek.com.au/api/jobsearch/v5/search"
     jd_url = "https://www.seek.com.au/job/"
     remove_text = '(Information & Communication Technology)'
 
@@ -81,18 +80,17 @@ class SeekSpider(scrapy.Spider):
         }
 
         # Get authentication token
-        self._setup_auth()
+        # self._setup_auth()
 
-    def _setup_auth(self):
-        """Setup authentication token"""
-        self.logger.info("Getting authorization token...")
-        auth_token = get_auth_token(config.SEEK_USERNAME, config.SEEK_PASSWORD)
-
-        if not auth_token:
-            raise Exception("Failed to get authorization token")
-
-        self.headers['Authorization'] = auth_token
-        self.logger.info("Successfully obtained authorization token")
+    # def _setup_auth(self):
+    #     """Setup authentication token"""
+    #     self.logger.info("Getting authorization token...")
+    #     auth_token = get_auth_token(config.SEEK_USERNAME, config.SEEK_PASSWORD)
+    #     if not auth_token:
+    #         raise Exception("Failed to get authorization token")
+    #
+    #     self.headers['Authorization'] = auth_token
+    #     self.logger.info("Successfully obtained authorization token")
 
     def start_requests(self):
         """Start the crawling process"""
