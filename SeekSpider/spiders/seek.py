@@ -161,6 +161,10 @@ class SeekSpider(scrapy.Spider):
         item = SeekspiderItem()
 
         # Basic job info
+        if data.get('classifications') and len(data['classifications']) > 0:
+            item['job_type'] = data['classifications'][0].get('subclassification', '').get('description', '')
+            print(item['job_type'])
+
         item['job_id'] = data['id']
         self.scraped_job_ids.add(item['job_id'])
         item['url'] = self.jd_url + str(data['id'])
@@ -198,10 +202,15 @@ class SeekSpider(scrapy.Spider):
             location = soup.find("span", attrs={"data-automation": "job-detail-location"})
             item['suburb'] = location.text if location else None
 
+            # Extract work type
+            work_type = soup.find("span", attrs={"data-automation": "job-detail-work-type"})
+            if work_type and not item.get('work_type'):
+                item['work_type'] = work_type.text
+
             # Extract job type
-            job_type = soup.find("span", attrs={"data-automation": "job-detail-work-type"})
-            if job_type and not item.get('work_type'):
-                item['work_type'] = job_type.text
+            job_type = soup.find("span", attrs={"data-automation": "job-detail-classifications"})
+            if job_type and not item.get('job_type'):
+                item['job_type'] = job_type.text
 
             # Extract salary
             salary = soup.find("span", attrs={"data-automation": "job-detail-salary"})
