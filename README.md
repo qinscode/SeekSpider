@@ -16,6 +16,7 @@ trends, salary insights, and clean PostgreSQL integration.
   <img alt="License" src="https://img.shields.io/github/license/your-username/SeekSpider?style=for-the-badge"/>
 </p>
 </div>
+
 ---
 
 ## 📚 Overview
