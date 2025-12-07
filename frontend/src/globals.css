@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html.dark {
+  /* Apply dark scheme to native browser elements */
+  color-scheme: dark;
+}
+
+a {
+  @apply hover:text-indigo-500 hover:decoration-indigo-500 decoration-inherit underline underline-offset-2;
+  transition: all 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  position: relative;
+}
+
+a.link--arrow::after {
+  content: '→';
+  opacity: 0;
+  position: absolute;
+  transform: translateX(-2px);
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+a.link--arrow:hover::after {
+  opacity: 1;
+  transform: translateX(5px);
+}
+
+/* Fix Tremor Select dropdown styling */
+[role="listbox"] {
+  @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg;
+  z-index: 50;
+}
+
+[role="option"] {
+  @apply text-slate-900 dark:text-slate-100;
+}
+
+[role="option"]:hover,
+[role="option"][data-highlighted] {
+  @apply bg-slate-100 dark:bg-slate-800;
+}
+
+body {
+  /* Add a subtle grid background pattern, increasing tech feel */
+  background-color: #0a0e17;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 30px 30px;
+}
+
+/* --- Minimal Dark Scrollbar --- */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background-color: #374151; border-radius: 9999px; }
+.custom-scrollbar:hover::-webkit-scrollbar-thumb { background-color: #4b5563; }
+
+/* Glassmorphism universal class */
+.glass-panel {
+  background: rgba(17, 24, 39, 0.7); /* Translucent dark color */
+  backdrop-filter: blur(12px); /* Blur filter */
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}

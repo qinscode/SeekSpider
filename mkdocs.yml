@@ -1,0 +1,92 @@
+site_name: Plombery
+site_url: https://lucafaggianelli.github.io/plombery
+copyright: Copyright &copy; 2023 - 2025 Luca Faggianelli
+
+repo_url: https://github.com/lucafaggianelli/plombery
+edit_uri: edit/main/docs/
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+theme:
+  name: material
+  logo: /plombery/assets/images/logo.svg
+  favicon: /plombery/assets/images/logo.svg
+
+  palette:
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+
+  features:
+    - content.action.view
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.instant
+    - navigation.top
+    - toc.follow
+
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+
+  custom_dir: docs/overrides
+
+extra:
+  analytics:
+    provider: plausible
+    property:
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path:
+        - "."
+
+nav:
+  - Home: index.md
+  - Get Started:
+      - Install: get-started.md
+      - Your first pipeline: create-a-pipeline.md
+  - Docs:
+      - Pipelines: pipelines.md
+      - Tasks: tasks.md
+      - Triggers: triggers.md
+      - Deployment: deployment.md
+  - Configuration:
+      - Overview: configuration/index.md
+      - Authentication:
+          - Generic OAuth: configuration/auth/generic-oauth.md
+          - Google: configuration/auth/google.md
+          - Microsoft: configuration/auth/microsoft.md
+      - Database: configuration/database.md
+      - Notifications: configuration/notifications/index.md
+      - System: configuration/system.md
+  - Recipes:
+      - SSL Certificate Check: recipes/certificates-expiration.md
+
+watch:
+  - ./docs
+  - mkdocs.yml

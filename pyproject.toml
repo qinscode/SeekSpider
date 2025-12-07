@@ -1,0 +1,60 @@
+[project]
+name = "plombery"
+authors = [{ name = "Luca Faggianelli", email = "luca@velvetlab.tech" }]
+description = "Python task scheduler with a user-friendly web UI"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.9,<3.14"
+keywords = [
+  "pipeline",
+  "task-scheduler",
+  "apscheduler",
+  "orchestrator",
+  "web-ui",
+  "fastapi",
+  "pydantic",
+]
+license = "MIT"
+classifiers = ["Programming Language :: Python :: 3"]
+dependencies = [
+  "apscheduler==3.11",
+  "alembic>=1.16.5",
+  "apprise>=1.8.0",
+  "authlib==1.6.5",
+  "fastapi>=0.115.8",
+  "httpx>=0.25.0",
+  "itsdangerous>=2.1.2",
+  "jinja2>=3.1.6",
+  "python-socketio>=5.14.2",
+  "pydantic>=2.12.0",
+  "pydantic-settings>=2.6.0",
+  "SQLAlchemy>=2.0.40",
+  "uvicorn>=0.32.0",
+  "supabase>=2.0.0",
+  "passlib>=1.7.4",
+  "python-jose[cryptography]>=3.3.0",
+]
+dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+  "black>=25.0.0",
+  "coverage>=7.3.2",
+  "flake8>=7.0.0",
+  "pytest>=8.0.0",
+  "pytest_asyncio>=1.0.0",
+  "pytest-env>=1.1.0",
+]
+docs = ["mkdocs-material>=9.1,<9.7"]
+
+[tool.setuptools.dynamic]
+version = { attr = "plombery._version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+env = [
+    "DATABASE_URL=sqlite:///:memory:",
+    "TESTING=true"
+]
+pythonpath = ["src"]

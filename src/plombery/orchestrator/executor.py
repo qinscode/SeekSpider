@@ -1,0 +1,284 @@
+from dataclasses import dataclass
+import inspect
+import logging
+from typing import Any, Callable, Dict, Optional
+from datetime import datetime, timezone
+
+from pydantic import BaseModel
+
+from plombery.constants import MANUAL_TRIGGER_ID
+from plombery.exceptions import InvalidDataPath
+from plombery.logger import close_logger, get_logger
+from plombery.notifications import notification_manager
+from plombery.utils import run_all_coroutines
+from plombery.websocket import sio
+from plombery.database.models import PipelineRun
+from plombery.database.repository import create_pipeline_run, update_pipeline_run
+from plombery.database.schemas import PipelineRunCreate
+from plombery.orchestrator.data_storage import store_task_output
+from plombery.pipeline.pipeline import Pipeline, Trigger, Task
+from plombery.pipeline.context import pipeline_context, run_context
+from plombery.pipeline_state import (
+    pipeline_schedule_is_enabled,
+    pipelines_are_enabled,
+)
+from plombery.schemas import PipelineRunStatus, TaskRun
+
+_logger = logging.getLogger(__name__)
+
+
+def utcnow():
+    return datetime.now(tz=timezone.utc)
+
+
+def _on_pipeline_start(pipeline: Pipeline, trigger: Optional[Trigger] = None):
+    input_params = trigger.params.model_dump() if trigger and trigger.params else None
+
+    pipeline_run = create_pipeline_run(
+        PipelineRunCreate(
+            start_time=utcnow(),
+            pipeline_id=pipeline.id,
+            trigger_id=trigger.id if trigger else MANUAL_TRIGGER_ID,
+            status=PipelineRunStatus.RUNNING,
+            input_params=input_params,
+            reason="scheduled",
+        )
+    )
+
+    _send_pipeline_event(pipeline, pipeline_run)
+
+    return pipeline_run
+
+
+def _on_pipeline_status_changed(
+    pipeline: Pipeline, pipeline_run: PipelineRun, status: PipelineRunStatus
+):
+    update_pipeline_run(pipeline_run, utcnow(), status)
+
+    _send_pipeline_event(pipeline, pipeline_run)
+
+    return pipeline_run
+
+
+def _send_pipeline_event(pipeline: Pipeline, pipeline_run: PipelineRun):
+    notify_coro = notification_manager.notify(pipeline, pipeline_run)
+
+    run_payload = dict(
+        id=pipeline_run.id,
+        status=pipeline_run.status,
+        start_time=pipeline_run.start_time.isoformat(),
+        duration=pipeline_run.duration,
+    )
+
+    emit_coro = sio.emit(
+        "run-update",
+        dict(
+            run=run_payload,
+            pipeline=pipeline_run.pipeline_id,
+            trigger=pipeline_run.trigger_id,
+        ),
+    )
+
+    run_all_coroutines([notify_coro, emit_coro])
+
+
+async def run(
+    pipeline: Pipeline,
+    trigger: Optional[Trigger] = None,
+    params: Optional[Dict[str, Any]] = None,
+    pipeline_run: Optional[PipelineRun] = None,
+):
+    """
+    This is the function that actually runs the pipeline, running all its tasks.
+
+    `pipeline_run` is typically supplied when the pipeline is run manually,
+        in this case one wants to know immediately the run_id to follow
+        the execution of the pipeline.
+    """
+
+    input_params = trigger.params.model_dump() if trigger and trigger.params else None
+
+    scheduled_run = pipeline_run is None or getattr(
+        pipeline_run, "reason", ""
+    ) == "scheduled"
+
+    if scheduled_run and not pipeline_schedule_is_enabled(pipeline.id):
+        _logger.info(
+            "Scheduled runs disabled, skipping pipeline `%s` (trigger `%s`)",
+            pipeline.id,
+            trigger.id if trigger else MANUAL_TRIGGER_ID,
+        )
+
+        if pipeline_run:
+            pipeline_run.tasks_run = []
+            _on_pipeline_status_changed(
+                pipeline, pipeline_run, PipelineRunStatus.CANCELLED
+            )
+        else:
+            pipeline_run = create_pipeline_run(
+                PipelineRunCreate(
+                    start_time=utcnow(),
+                    pipeline_id=pipeline.id,
+                    trigger_id=trigger.id if trigger else MANUAL_TRIGGER_ID,
+                    status=PipelineRunStatus.CANCELLED,
+                    input_params=input_params,
+                    reason="schedule_disabled",
+                )
+            )
+            _send_pipeline_event(pipeline, pipeline_run)
+
+        return
+
+    if not pipelines_are_enabled():
+        _logger.info(
+            "Pipelines disabled, skipping pipeline `%s` (trigger `%s`)",
+            pipeline.id,
+            trigger.id if trigger else MANUAL_TRIGGER_ID,
+        )
+
+        if pipeline_run:
+            pipeline_run.tasks_run = []
+            _on_pipeline_status_changed(
+                pipeline, pipeline_run, PipelineRunStatus.CANCELLED
+            )
+        else:
+            pipeline_run = create_pipeline_run(
+                PipelineRunCreate(
+                    start_time=utcnow(),
+                    pipeline_id=pipeline.id,
+                    trigger_id=trigger.id if trigger else MANUAL_TRIGGER_ID,
+                    status=PipelineRunStatus.CANCELLED,
+                    input_params=input_params,
+                    reason="pipelines_disabled",
+                )
+            )
+            _send_pipeline_event(pipeline, pipeline_run)
+
+        return
+
+    if pipeline_run:
+        _on_pipeline_status_changed(pipeline, pipeline_run, PipelineRunStatus.RUNNING)
+    else:
+        pipeline_run = _on_pipeline_start(pipeline, trigger)
+
+    pipeline_run.tasks_run = []
+
+    pipeline_token = pipeline_context.set(pipeline)
+    run_token = run_context.set(pipeline_run)
+
+    logger = get_logger()
+
+    logger.info(
+        "Executing pipeline `%s` #%d via trigger `%s`",
+        pipeline.id,
+        pipeline_run.id,
+        trigger.id if trigger else MANUAL_TRIGGER_ID,
+    )
+
+    pipeline_params: Optional[BaseModel] = None
+
+    if pipeline.params:
+        # Priority: manually passed params > trigger params > default params
+        if params:
+            # Use manually passed parameters
+            pipeline_params = pipeline.params(**params)
+        elif trigger and trigger.params:
+            # Use trigger's default parameters
+            pipeline_params = trigger.params
+        else:
+            # Use pipeline's default parameters
+            pipeline_params = pipeline.params()
+    elif (trigger and trigger.params) or params:
+        logger.warning("This pipeline doesn't support input params")
+
+    flowing_data = None
+
+    for task in pipeline.tasks:
+        logger.info("Executing task %s", task.id)
+
+        task_run = TaskRun(task_id=task.id)
+
+        task_start_time = utcnow()
+
+        try:
+            flowing_data = await _execute_task(task, flowing_data, pipeline_params)
+            task_run.status = PipelineRunStatus.COMPLETED
+        except Exception as e:
+            logger.error(str(e), exc_info=e)
+            flowing_data = None
+            task_run.status = PipelineRunStatus.FAILED
+        finally:
+            task_run.duration = (utcnow() - task_start_time).total_seconds() * 1000
+
+            try:
+                task_run.has_output = store_task_output(
+                    pipeline_run.id, task.id, flowing_data
+                )
+            except InvalidDataPath as error:
+                logger.error(
+                    "Can't store the task output as the path is invalid", exc_info=error
+                )
+
+            pipeline_run.tasks_run.append(task_run)
+
+            if task_run.status == PipelineRunStatus.FAILED:
+                # A task failed so the entire pipeline failed
+                _on_pipeline_status_changed(
+                    pipeline, pipeline_run, PipelineRunStatus.FAILED
+                )
+                break
+
+    else:
+        # All task succeeded so the entire pipeline succeeded
+        _on_pipeline_status_changed(pipeline, pipeline_run, PipelineRunStatus.COMPLETED)
+
+    pipeline_context.reset(pipeline_token)
+    run_context.reset(run_token)
+    close_logger(logger)
+
+
+@dataclass
+class TaskFunctionSignature:
+    has_positional_args: bool = False
+    has_params_arg: bool = False
+
+
+def check_task_signature(func: Callable) -> TaskFunctionSignature:
+    """
+    Check if a function signature declares positional args.
+
+    This is meant to be used to check if a task function accepts data inputs from another task.
+
+    The signature of the task run function should be:
+    `def task_fn(previous_task_output: Any, params: Model):`
+
+    Where the params argument is the Pipeline input params.
+    """
+
+    result = TaskFunctionSignature()
+
+    for name, parameter in inspect.signature(func).parameters.items():
+        if (
+            parameter.kind == inspect.Parameter.POSITIONAL_ONLY
+            or inspect.Parameter.VAR_POSITIONAL
+        ) and name != "params":
+            result.has_positional_args = True
+        elif parameter.VAR_KEYWORD or (parameter.KEYWORD_ONLY and name == "params"):
+            result.has_params_arg = True
+
+    return result
+
+
+async def _execute_task(
+    task: Task,
+    flowing_data,
+    params: Optional[BaseModel] = None,
+):
+    result = check_task_signature(task.run)
+
+    args = [flowing_data] if result.has_positional_args else []
+    kwargs = {"params": params} if params and result.has_params_arg else {}
+
+    result = await task.run(*args, **kwargs)
+
+    return result

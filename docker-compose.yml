@@ -1,64 +1,40 @@
 services:
-  selenium:
-    image: selenium/standalone-chromium:latest
-    container_name: selenium
-    shm_size: 2g
-    ports:
-      - "4444:4444"
-      - "7900:7900"
-    environment:
-      - SE_NODE_MAX_SESSIONS=1
-      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
-      - SE_NODE_SESSION_TIMEOUT=300
-      - SE_START_XVFB=true
-      - SE_SCREEN_WIDTH=1920
-      - SE_SCREEN_HEIGHT=1080
-      - SE_SCREEN_DEPTH=24
-      - OTEL_SDK_DISABLED=true
-      - DISABLE_TRACING=true
-    networks:
-      - scraping_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "200m"
-        max-file: "10"
-        compress: "true"
-    volumes:
-      - ./logs/selenium:/var/log/selenium
-
   seekspider:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: seekspider
-    depends_on:
-      selenium:
-        condition: service_healthy
+    ports:
+      - "6059:8000"
     environment:
-      - SELENIUM_HOST=selenium
-      - SELENIUM_PORT=4444
-      - TZ=Australia/Perth
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
-      - ./logs/spider:/app/logs
-    networks:
-      - scraping_network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "200m"
-        max-file: "10"
-        compress: "true"
+      # Database configuration (for scraper only)
+      - POSTGRESQL_HOST=${POSTGRESQL_HOST}
+      - POSTGRESQL_PORT=${POSTGRESQL_PORT:-5432}
+      - POSTGRESQL_USER=${POSTGRESQL_USER}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD}
+      - POSTGRESQL_DATABASE=${POSTGRESQL_DATABASE}
+      - POSTGRESQL_TABLE=${POSTGRESQL_TABLE:-seek_jobs}
 
-networks:
-  scraping_network:
-    driver: bridge
+      # AI API configuration (for post-processing)
+      - AI_API_KEY=${AI_API_KEY}
+      - AI_API_URL=${AI_API_URL}
+      - AI_MODEL=${AI_MODEL}
+
+      # Application configuration
+      - PYTHONPATH=/app/pipeline:/app:/app/src:/app/scraper
+      - PYTHONUNBUFFERED=1
+      - TZ=Australia/Perth
+      - OUTPUT_PATH=/app/output
+      - DATA_PATH=/app/data
+      - DATABASE_URL=sqlite:////app/data/plombery.db
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./output:/app/output
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

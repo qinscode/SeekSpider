@@ -1,244 +1,159 @@
-<div align="center">
-
 # SeekSpider
 
-**Smart Job Scraper for SEEK**  
-A powerful, AI-augmented web scraping tool built with Scrapy, designed to extract, process, and analyze job listings
-from [seek.com.au](https://www.seek.com.au). SeekSpider enables real-time job market intelligence with tech stack
-trends, salary insights, and clean PostgreSQL integration.
+A Seek.com.au job scraper system built on the Plombery task scheduling framework, designed for automated collection of Australian IT job listings.
 
-<p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white&style=for-the-badge"/>
-  <img alt="Scrapy" src="https://img.shields.io/badge/Scrapy-WebCrawler-2A9D8F?style=for-the-badge"/>
-  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-JSONB-336791?logo=postgresql&logoColor=white&style=for-the-badge"/>
-  <img alt="Selenium" src="https://img.shields.io/badge/Selenium-Automation-43B02A?logo=selenium&logoColor=white&style=for-the-badge"/>
-  <img alt="AI Integration" src="https://img.shields.io/badge/AI-TextAnalysis-6C63FF?style=for-the-badge"/>
-  <img alt="License" src="https://img.shields.io/github/license/your-username/SeekSpider?style=for-the-badge"/>
-</p>
-</div>
+## Features
 
----
+- **Automated Scraping** - Scheduled crawling of Seek.com.au IT job listings
+- **AI Analysis** - Automatic tech stack extraction and salary normalization using AI
+- **Web UI** - Visual task management interface powered by Plombery
+- **Database Storage** - PostgreSQL/Supabase data persistence
+- **Multi-Pipeline Scheduling** - Support for multiple data collection pipelines running in parallel
 
-## 📚 Overview
-
-SeekSpider is a modular scraping system designed for job market analysis. It collects IT-related job postings from SEEK
-using Scrapy and Selenium, enriches the data with AI-powered salary and tech stack analysis, and stores everything into
-a PostgreSQL database with JSONB fields for flexibility and speed.
-
----
-
-## ⚙️ Features
-
-### 🕸 Data Collection
-
-- Scrapy crawler with category + pagination traversal
-- Selenium-based authentication
-- BeautifulSoup integration for fine-grained parsing
-
-### 🧠 AI Integration
-
-- Extracts and analyzes technology stacks
-- Normalizes salary info
-- Generates demand statistics on tech usage
-
-### 💾 Database & Storage
-
-- PostgreSQL with JSONB for flexible schema
-- Transaction-safe pipeline with smart upserts
-- Automatic job status tracking
-
-### 🧰 Architecture
-
-- Modular class structure (`DatabaseManager`, `AIClient`, `Logger`, `Utils`)
-- Environment-configured settings
-- Batch-safe crawling and retry mechanisms
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.9+
-- PostgreSQL (with an active database)
-- Google Chrome + ChromeDriver
-- Git
-
-### Installation
-
-```bash
-git clone https://github.com/your-username/SeekSpider.git
-cd SeekSpider
-pip install -r requirements.txt
-```
-
-### Configuration
-
-Create a `.env` file in the root directory:
-
-```env
-POSTGRESQL_HOST=localhost
-POSTGRESQL_PORT=5432
-POSTGRESQL_USER=postgres
-POSTGRESQL_PASSWORD=secret
-POSTGRESQL_DATABASE=seek_data
-POSTGRESQL_TABLE=Jobs
-
-SEEK_USERNAME=your_email
-SEEK_PASSWORD=your_password
-
-AI_API_KEY=your_api_key
-AI_API_URL=https://api.openai.com/v1/...
-AI_MODEL=gpt-4
-```
-
-Make sure PostgreSQL is running and your credentials are correct.
-
----
-
-## 🏃 Run the Spider
-
-### Option 1: With main script
-
-```bash
-python main.py
-```
-
-### Option 2: With Scrapy
-
-```bash
-scrapy crawl seek
-```
-
-This will log in to SEEK, collect job data, and store it into PostgreSQL.
-
----
-
-## 🔍 API Query Parameters
-
-The spider uses Seek’s internal search API. Here’s an example:
-
-```python
-search_params = {
-    'where': 'All Perth WA',
-    'classification': '6281',  # IT category
-    'seekSelectAllPages': 'true',
-    'locale': 'en-AU',
-}
-```
-
-- Supports subclassification traversal
-- Automatically paginated
-- SEO metadata enabled
-- Auth tokens handled automatically
-
----
-
-## 🧱 Project Structure
+## Project Structure
 
 ```
 SeekSpider/
-├── spiders/seek_spider.py      # Main spider
-├── pipelines.py                # Data insertion logic
-├── items.py                    # Data model
-├── settings.py                 # Scrapy settings
-├── main.py                     # Entry point
-├── db/                         # Database utilities
-├── ai/                         # AI analysis components
-└── utils/                      # Parsing, token, salary analyzers
+├── pipeline/                    # Pipeline definitions
+│   └── src/
+│       ├── app.py              # Application entry point
+│       ├── seek_spider_pipeline.py     # Seek scraper pipeline
+│       ├── flow_meter_pipeline.py      # Flow meter data pipeline
+│       └── ...                         # Other pipelines
+├── scraper/                     # Scraper modules
+│   └── SeekSpider/             # Seek spider
+│       ├── spiders/
+│       │   └── seek.py         # Main spider logic
+│       ├── core/
+│       │   ├── config.py       # Configuration management
+│       │   ├── database.py     # Database operations
+│       │   └── ai_client.py    # AI API client
+│       ├── utils/
+│       │   ├── tech_stack_analyzer.py    # Tech stack analysis
+│       │   ├── salary_normalizer.py      # Salary normalization
+│       │   └── tech_frequency_analyzer.py # Tech frequency statistics
+│       ├── pipelines.py        # Scrapy pipeline
+│       └── settings.py         # Scrapy settings
+├── src/plombery/               # Plombery core
+├── frontend/                   # React frontend
+└── .env                        # Environment configuration
 ```
 
----
+## Quick Start
 
-## 🧩 Key Modules
-
-- `DatabaseManager`: Context-managed PostgreSQL operations with retries
-- `Logger`: Colored logging with levels + per-component logs
-- `AIClient`: Handles external API requests and formatting
-- `TechStackAnalyzer`: NLP-based tech term extraction
-- `SalaryNormalizer`: Converts pay ranges to numeric bounds
-- `Config`: Loads and validates `.env` settings
-
----
-
-## 🗃 Database Schema
-
-```sql
--- ----------------------------
--- Table structure for Jobs
--- ----------------------------
-DROP TABLE IF EXISTS "public"."Jobs";
-CREATE TABLE "public"."Jobs" (
-  "Id" int4 NOT NULL GENERATED BY DEFAULT AS IDENTITY (
-INCREMENT 1
-MINVALUE  1
-MAXVALUE 2147483647
-START 1
-CACHE 1
-),
-  "JobTitle" text COLLATE "pg_catalog"."default",
-  "BusinessName" text COLLATE "pg_catalog"."default",
-  "WorkType" text COLLATE "pg_catalog"."default",
-  "JobType" text COLLATE "pg_catalog"."default",
-  "PayRange" text COLLATE "pg_catalog"."default",
-  "Suburb" text COLLATE "pg_catalog"."default",
-  "Area" text COLLATE "pg_catalog"."default",
-  "Url" text COLLATE "pg_catalog"."default",
-  "PostedDate" timestamp(6),
-  "JobDescription" text COLLATE "pg_catalog"."default",
-  "AdvertiserId" int4,
-  "CreatedAt" timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "UpdatedAt" timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "IsNew" bool,
-  "IsActive" bool DEFAULT true,
-  "ExpiryDate" timestamp(6),
-  "MaxSalary" int4,
-  "MinSalary" int4,
-  "LocationType" text COLLATE "pg_catalog"."default",
-  "TechStack" text COLLATE "pg_catalog"."default",
-  "IsUserCreated" bool
-)
-;
-ALTER TABLE "public"."Jobs" OWNER TO "postgres";
-
--- ----------------------------
--- Primary Key structure for table Jobs
--- ----------------------------
-ALTER TABLE "public"."Jobs" ADD CONSTRAINT "PK_Jobs" PRIMARY KEY ("Id");
-
-```
-
-Recommended indexes:
-
-```sql
-CREATE INDEX idx_active ON "Jobs" ("IsActive");
-CREATE INDEX idx_salary ON "Jobs" ("MinSalary", "MaxSalary");
-CREATE INDEX idx_techstack ON "Jobs" USING GIN ("TechStack");
-```
-
----
-
-## 🤝 Contributing
-
-Pull requests are welcome!  
-Please open an issue to discuss major changes.
+### 1. Install Dependencies
 
 ```bash
-git checkout -b feature/my-new-feature
-git commit -m "feat: add new parser"
-git push origin feature/my-new-feature
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -e .
+pip install -r requirements.txt
 ```
 
----
+### 2. Configure Environment Variables
 
-## 📄 License
+Copy `.env.example` to `.env` and fill in your configuration:
 
-Licensed under the [Apache License 2.0](LICENSE).
+```env
+# Database configuration
+POSTGRESQL_HOST=your_host
+POSTGRESQL_PORT=5432
+POSTGRESQL_USER=your_user
+POSTGRESQL_PASSWORD=your_password
+POSTGRESQL_DATABASE=your_database
+POSTGRESQL_TABLE=seek_jobs
 
----
+# AI API configuration (for post-processing)
+AI_API_KEY=your_api_key
+AI_API_URL=https://api.siliconflow.cn/v1/chat/completions
+AI_MODEL=deepseek-ai/DeepSeek-V2.5
+```
 
-## 🙏 Acknowledgments
+### 3. Run
 
-- [Scrapy](https://scrapy.org/) for the powerful crawling engine
-- [Selenium](https://www.selenium.dev/) for seamless login automation
-- [BeautifulSoup](https://www.crummy.com/software/BeautifulSoup/) for DOM parsing  
+```bash
+# Option 1: Run via Pipeline (recommended)
+cd pipeline
+./run.sh
+
+# Option 2: Run spider directly
+cd scraper
+scrapy crawl seek
+```
+
+Access the Web UI at `http://localhost:8000`.
+
+## Seek Spider Pipeline
+
+### Capabilities
+
+- Scrapes IT job listings from Seek.com.au (Perth area)
+- Covers all IT subcategories (Development, Architecture, DevOps, Testing, etc.)
+- Automatically extracts job details (salary, location, job description, etc.)
+- AI post-processing: tech stack extraction, salary normalization
+
+### Scheduled Tasks
+
+The pipeline is configured with two scheduled triggers:
+
+- **Daily 6 AM** - Runs at 6:00 AM (Perth timezone)
+- **Daily 6 PM** - Runs at 6:00 PM (Perth timezone)
+
+### Configuration Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `location` | Search location | All Perth WA |
+| `classification` | Job classification code | 6281 (IT) |
+| `run_post_processing` | Run AI post-processing | true |
+| `concurrent_requests` | Number of concurrent requests | 16 |
+| `download_delay` | Request delay (seconds) | 2.0 |
+
+## Database Schema
+
+The spider stores data in PostgreSQL with the following main fields:
+
+| Field | Description |
+|-------|-------------|
+| Id | Job ID (Seek Job ID) |
+| JobTitle | Job title |
+| BusinessName | Company name |
+| WorkType | Work type (Full-time/Part-time/Contract) |
+| JobType | Job category |
+| PayRange | Salary range |
+| Area | Region |
+| Suburb | Detailed location |
+| JobDescription | Job description (HTML) |
+| TechStack | Tech stack (AI extracted) |
+| Url | Job URL |
+| PostedDate | Posted date |
+| IsActive | Whether the job is active |
+
+## Docker Deployment
+
+```bash
+# Build and start
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+## Tech Stack
+
+- **Scraping Framework**: Scrapy
+- **Task Scheduling**: Plombery (APScheduler)
+- **Web Framework**: FastAPI
+- **Frontend**: React + Vite
+- **Database**: PostgreSQL
+- **AI API**: DeepSeek / OpenAI-compatible API
+
+## License
+
+MIT License

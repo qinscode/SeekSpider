@@ -14,4 +14,7 @@ __pycache__/
 # Local settings
 config.py
 /logs/
+
+# Persistent data (SQLite database and scraper output)
 /data/
+/output/
