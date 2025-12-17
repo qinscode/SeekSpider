@@ -158,7 +158,7 @@ class SeekSpider(scrapy.Spider):
         if data.get('classifications') and len(data['classifications']) > 0:
             item['job_type'] = data['classifications'][0].get('subclassification', '').get('description', '')
 
-        item['job_id'] = data['id']
+        item['job_id'] = str(data['id'])
         self.scraped_job_ids.add(item['job_id'])
         item['url'] = self.jd_url + str(data['id'])
         item['job_title'] = data.get('title', '')
