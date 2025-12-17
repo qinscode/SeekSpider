@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from dateutil import tz
 
+import psycopg2
 from apscheduler.triggers.cron import CronTrigger
 from plombery import register_pipeline, task, Trigger, get_logger
 
@@ -181,6 +182,111 @@ register_pipeline(
             ),
             schedule=CronTrigger(
                 hour=18,
+                minute=0,
+                timezone=tz.gettz("Australia/Perth")
+            ),
+        ),
+    ],
+)
+
+
+# ============================================================================
+# Daily Reset IsNew Pipeline
+# ============================================================================
+
+class ResetIsNewParams(BaseModel):
+    """Parameters for Reset IsNew task"""
+    dry_run: bool = Field(
+        default=False,
+        description="If True, only show what would be changed without making changes"
+    )
+
+
+@task
+async def reset_is_new(params: ResetIsNewParams) -> dict:
+    """Reset IsNew field to False for all jobs at midnight"""
+
+    logger = get_logger()
+    logger.info("Starting daily IsNew reset task")
+
+    try:
+        # Get database configuration from environment
+        db_config = {
+            'host': os.getenv('POSTGRESQL_HOST'),
+            'port': int(os.getenv('POSTGRESQL_PORT', 5432)),
+            'user': os.getenv('POSTGRESQL_USER'),
+            'password': os.getenv('POSTGRESQL_PASSWORD'),
+            'database': os.getenv('POSTGRESQL_DATABASE'),
+        }
+        table_name = os.getenv('POSTGRESQL_TABLE', 'seek_jobs')
+
+        # Validate config
+        missing = [k for k, v in db_config.items() if not v and k != 'port']
+        if missing:
+            raise ValueError(f"Missing database config: {missing}")
+
+        # Connect to database
+        conn = psycopg2.connect(**db_config)
+        cursor = conn.cursor()
+
+        # First, count how many records have IsNew = True
+        cursor.execute(f'SELECT COUNT(*) FROM "{table_name}" WHERE "IsNew" = TRUE')
+        count_before = cursor.fetchone()[0]
+        logger.info(f"Found {count_before} jobs with IsNew=True")
+
+        if params.dry_run:
+            logger.info("DRY RUN: Would reset IsNew to False for all jobs")
+            cursor.close()
+            conn.close()
+            return {
+                "status": "dry_run",
+                "jobs_would_be_reset": count_before,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        # Reset IsNew to False for all jobs
+        cursor.execute(f'''
+            UPDATE "{table_name}"
+            SET "IsNew" = FALSE, "UpdatedAt" = now()
+            WHERE "IsNew" = TRUE
+        ''')
+        affected_rows = cursor.rowcount
+        conn.commit()
+
+        logger.info(f"Reset {affected_rows} jobs to IsNew=False")
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "jobs_reset": affected_rows,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Reset IsNew failed: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+register_pipeline(
+    id="reset_is_new",
+    description="Reset IsNew field to False for all jobs (run at midnight)",
+    tasks=[reset_is_new],
+    params=ResetIsNewParams,
+    triggers=[
+        # Daily at midnight Perth time
+        Trigger(
+            id="daily_midnight",
+            name="Daily Midnight Reset",
+            description="Reset IsNew to False at midnight Perth time",
+            params=ResetIsNewParams(dry_run=False),
+            schedule=CronTrigger(
+                hour=0,
                 minute=0,
                 timezone=tz.gettz("Australia/Perth")
             ),
