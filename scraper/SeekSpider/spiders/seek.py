@@ -10,6 +10,7 @@ from SeekSpider.core.ai_client import AIClient
 from SeekSpider.core.config import config
 from SeekSpider.core.database import DatabaseManager
 from SeekSpider.items import SeekspiderItem
+from SeekSpider.scripts.backfill_job_descriptions import JobDescriptionBackfiller
 from SeekSpider.utils.salary_normalizer import SalaryNormalizer
 from SeekSpider.utils.tech_frequency_analyzer import TechStatsAnalyzer
 from SeekSpider.utils.tech_stack_analyzer import TechStackAnalyzer
@@ -258,7 +259,22 @@ class SeekSpider(scrapy.Spider):
         """Run post-scraping analysis"""
         self.logger.info("Starting post-processing...")
 
-        # Initialize analyzers
+        # Step 1: Backfill missing job descriptions
+        self.logger.info("Step 1: Running job description backfill...")
+        try:
+            backfiller = JobDescriptionBackfiller(
+                delay=5.0,
+                logger=self.logger,
+                headless=False,  # Use visible browser for better Cloudflare bypass
+                use_xvfb=False
+            )
+            backfiller.run(limit=None)  # Process all jobs without description
+            self.logger.info(f"Backfill completed: {backfiller.stats['success']} jobs updated")
+        except Exception as e:
+            self.logger.error(f"Backfill error: {str(e)}")
+
+        # Step 2: Initialize analyzers
+        self.logger.info("Step 2: Running AI analysis...")
         tech_analyzer = TechStackAnalyzer(self.db, self.ai_client, self.logger)
         salary_normalizer = SalaryNormalizer(self.db, self.ai_client, self.logger)
         stats_analyzer = TechStatsAnalyzer(self.db, self.logger)

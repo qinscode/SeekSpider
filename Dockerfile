@@ -27,12 +27,22 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including Chrome and virtual display
 RUN apt-get update && apt-get install -y \
     gcc \
     libxml2-dev \
     libxslt-dev \
     curl \
+    wget \
+    gnupg \
+    xvfb \
+    xauth \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Chromium (works on both amd64 and arm64)
+RUN apt-get update && apt-get install -y \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python project files
@@ -59,7 +69,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install additional pipeline requirements
 RUN pip install --no-cache-dir \
     python-dateutil \
-    pandas
+    pandas \
+    undetected-chromedriver \
+    selenium \
+    pyvirtualdisplay
 
 # Create directories for data and logs
 RUN mkdir -p /app/data /app/logs
@@ -67,6 +80,10 @@ RUN mkdir -p /app/data /app/logs
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Set timezone to Perth
+ENV TZ=Australia/Perth
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Set environment variables
 ENV PYTHONPATH=/app/pipeline:/app:/app/src:/app/scraper:${PYTHONPATH}
