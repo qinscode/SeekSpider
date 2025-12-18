@@ -7,27 +7,26 @@ import psycopg2
 from scrapy import signals
 
 from SeekSpider.core.config import config
+from SeekSpider.core.output_manager import OutputManager
 
 
 class JsonExportPipeline:
     """Pipeline to export scraped items to JSON files and logs"""
 
     def open_spider(self, spider):
-        # Create output directory with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Get region from spider
+        region = getattr(spider, 'region', 'Perth')
 
-        # Get output base path from environment or use default
-        output_base = os.getenv('OUTPUT_PATH', os.path.join(os.path.dirname(__file__), '../../output'))
-        self.output_dir = os.path.join(output_base, 'seek_spider', timestamp)
-
-        os.makedirs(self.output_dir, exist_ok=True)
+        # Use OutputManager for directory structure
+        self.output_manager = OutputManager('seek_spider', region=region)
+        self.output_dir = self.output_manager.setup()
 
         # Initialize data file
-        self.jobs_file = open(os.path.join(self.output_dir, 'jobs.jsonl'), 'w', encoding='utf-8')
+        self.jobs_file = open(self.output_manager.get_file_path('jobs.jsonl'), 'w', encoding='utf-8')
         self.items_count = 0
 
         # Setup log file in the same directory
-        self.log_file_path = os.path.join(self.output_dir, 'spider.log')
+        self.log_file_path = self.output_manager.get_file_path('spider.log')
         self.file_handler = logging.FileHandler(self.log_file_path, encoding='utf-8')
         self.file_handler.setLevel(logging.INFO)
         self.file_handler.setFormatter(logging.Formatter(

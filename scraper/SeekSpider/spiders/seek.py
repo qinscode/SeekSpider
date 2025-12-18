@@ -1,4 +1,5 @@
 from urllib.parse import urlencode
+import logging
 
 import requests
 import scrapy
@@ -9,6 +10,7 @@ from scrapy.exceptions import CloseSpider
 from SeekSpider.core.ai_client import AIClient
 from SeekSpider.core.config import config
 from SeekSpider.core.database import DatabaseManager
+from SeekSpider.core.output_manager import OutputManager
 from SeekSpider.core.regions import AUSTRALIAN_REGIONS, DEFAULT_REGION, get_seek_location, is_valid_region
 from SeekSpider.items import SeekspiderItem
 from SeekSpider.scripts.backfill_job_descriptions import JobDescriptionBackfiller
@@ -24,7 +26,7 @@ class SeekSpider(scrapy.Spider):
     jd_url = "https://www.seek.com.au/job/"
     remove_text = '(Information & Communication Technology)'
 
-    def __init__(self, location=None, classification=None, region=None, *args, **kwargs):
+    def __init__(self, location=None, classification=None, region=None, limit=None, *args, **kwargs):
         super(SeekSpider, self).__init__(*args, **kwargs)
 
         # Initialize core components
@@ -34,6 +36,10 @@ class SeekSpider(scrapy.Spider):
 
         # Initialize scraped job IDs set
         self.scraped_job_ids = set()
+
+        # Item limit for testing (None = unlimited)
+        self.item_limit = int(limit) if limit else None
+        self.items_scraped = 0
 
         # Handle region parameter
         if region:
@@ -204,14 +210,16 @@ class SeekSpider(scrapy.Spider):
         # Salary info
         item['pay_range'] = data.get('salaryLabel', '')
 
-        # Try to get teaser/description from search API first
-        item['job_description'] = data.get('teaser', '')
+        # Job description will be fetched from detail page
+        # Don't use teaser - if we can't get full JD, store empty
+        item['job_description'] = ''
 
         # Request detail page to get full job description
+        # Allow 403 responses to be processed (Cloudflare blocking)
         return Request(
             url=item['url'],
             callback=self.parse_job_detail,
-            meta={'item': item},
+            meta={'item': item, 'handle_httpstatus_list': [403]},
             headers=self.headers,
             dont_filter=True
         )
@@ -220,12 +228,18 @@ class SeekSpider(scrapy.Spider):
         """Parse job detail page to get full description"""
         item = response.meta['item']
 
+        # Check item limit
+        if self.item_limit and self.items_scraped >= self.item_limit:
+            self.logger.info(f"Item limit ({self.item_limit}) reached, closing spider")
+            raise CloseSpider(f'Item limit ({self.item_limit}) reached')
+
         try:
             soup = BeautifulSoup(response.text, 'lxml')
 
             # Check if we got blocked by Cloudflare
             if 'challenge' in response.text.lower() or response.status == 403:
-                self.logger.warning(f"Cloudflare challenge for job {item['job_id']}, using teaser only")
+                self.logger.warning(f"Cloudflare challenge for job {item['job_id']}, JD will be empty")
+                self.items_scraped += 1
                 return item
 
             # Extract location
@@ -264,6 +278,7 @@ class SeekSpider(scrapy.Spider):
         except Exception as e:
             self.logger.error(f"Error parsing job detail {item['job_id']}: {str(e)}")
 
+        self.items_scraped += 1
         return item
 
     def closed(self, reason):
@@ -286,14 +301,43 @@ class SeekSpider(scrapy.Spider):
         # Step 1: Backfill missing job descriptions
         self.logger.info("Step 1: Running job description backfill...")
         try:
+            # Create output files for backfill logging
+            output_manager = OutputManager('backfill_logs', region=self.region)
+            output_dir = output_manager.setup()
+            csv_file = output_manager.get_file_path(f'backfill_{output_manager.timestamp}.csv')
+            log_file = output_manager.get_file_path(f'backfill_{output_manager.timestamp}.log')
+
+            # Create a separate logger for backfill that writes to both spider log and backfill log
+            backfill_logger = logging.getLogger('backfill')
+            backfill_logger.setLevel(logging.INFO)
+            backfill_logger.handlers.clear()
+
+            # Add file handler for backfill log
+            backfill_file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            backfill_file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'
+            ))
+            backfill_logger.addHandler(backfill_file_handler)
+
+            # Also propagate to spider logger
+            backfill_logger.propagate = False
+            backfill_logger.addHandler(logging.StreamHandler())
+
             backfiller = JobDescriptionBackfiller(
                 delay=5.0,
-                logger=self.logger,
+                logger=backfill_logger,
                 headless=False,  # Use visible browser for better Cloudflare bypass
-                use_xvfb=False
+                use_xvfb=False,
+                csv_file=csv_file
             )
             backfiller.run(limit=None)  # Process all jobs without description
             self.logger.info(f"Backfill completed: {backfiller.stats['success']} jobs updated")
+            self.logger.info(f"Backfill CSV: {csv_file}")
+            self.logger.info(f"Backfill log: {log_file}")
+
+            # Close backfill log handler
+            backfill_file_handler.close()
+            backfill_logger.removeHandler(backfill_file_handler)
         except Exception as e:
             self.logger.error(f"Backfill error: {str(e)}")
 

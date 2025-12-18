@@ -151,6 +151,10 @@ class CustomRetryMiddleware(RetryMiddleware):
     def process_response(self, request, response, spider):
         if request.meta.get('dont_retry', False):
             return response
+        # Don't retry if the status code is in handle_httpstatus_list
+        handle_httpstatus_list = request.meta.get('handle_httpstatus_list', [])
+        if response.status in handle_httpstatus_list:
+            return response
         if response.status in [500, 503, 504, 400, 403, 404]:
             if response.status == 403:
                 spider.logger.warning("You may have been banned. URL: %s" % request.url)

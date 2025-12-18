@@ -31,22 +31,27 @@ load_dotenv(env_path)
 
 from core.config import config
 from core.database import DatabaseManager
+from core.output_manager import OutputManager
 
 
-def setup_logging():
+def setup_logging(region: str = None):
     """Setup logging to both console and file, and create CSV log file"""
-    log_dir = os.path.join(project_root, 'output', 'backfill_logs')
-    os.makedirs(log_dir, exist_ok=True)
+    # Use OutputManager for directory structure
+    output_manager = OutputManager('backfill_logs', region=region)
+    output_dir = output_manager.setup()
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = os.path.join(log_dir, f'backfill_{timestamp}.log')
-    csv_file = os.path.join(log_dir, f'backfill_{timestamp}.csv')
+    timestamp = output_manager.timestamp
+    log_file = output_manager.get_file_path(f'backfill_{timestamp}.log')
+    csv_file = output_manager.get_file_path(f'backfill_{timestamp}.csv')
 
     log_format = '%(asctime)s [%(levelname)s] %(message)s'
     date_format = '%Y-%m-%d %H:%M:%S'
 
     logger = logging.getLogger('backfill')
     logger.setLevel(logging.INFO)
+
+    # Clear any existing handlers
+    logger.handlers.clear()
 
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter(log_format, date_format))
@@ -56,6 +61,7 @@ def setup_logging():
     console_handler.setFormatter(logging.Formatter(log_format, date_format))
     logger.addHandler(console_handler)
 
+    logger.info(f"Output directory: {output_dir}")
     logger.info(f"Log file: {log_file}")
     logger.info(f"CSV file: {csv_file}")
     return logger, csv_file
@@ -488,11 +494,13 @@ def main():
                         help='Skip AI analysis after backfill')
     parser.add_argument('--include-inactive', action='store_true',
                         help='Include inactive jobs in backfill (default: only active jobs)')
+    parser.add_argument('--region', type=str, default=None,
+                        help='Region for output organization (e.g., Sydney, Perth)')
 
     args = parser.parse_args()
 
-    logger, csv_file = setup_logging()
-    logger.info(f"Arguments: limit={args.limit}, delay={args.delay}, headless={args.headless}, xvfb={args.xvfb}, skip_ai={args.skip_ai}, include_inactive={args.include_inactive}")
+    logger, csv_file = setup_logging(region=args.region)
+    logger.info(f"Arguments: limit={args.limit}, delay={args.delay}, headless={args.headless}, xvfb={args.xvfb}, skip_ai={args.skip_ai}, include_inactive={args.include_inactive}, region={args.region}")
 
     backfiller = JobDescriptionBackfiller(
         delay=args.delay,
