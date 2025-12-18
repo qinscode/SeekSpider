@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import csv
 import logging
 import os
 import random
@@ -33,12 +34,13 @@ from core.database import DatabaseManager
 
 
 def setup_logging():
-    """Setup logging to both console and file"""
+    """Setup logging to both console and file, and create CSV log file"""
     log_dir = os.path.join(project_root, 'output', 'backfill_logs')
     os.makedirs(log_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = os.path.join(log_dir, f'backfill_{timestamp}.log')
+    csv_file = os.path.join(log_dir, f'backfill_{timestamp}.csv')
 
     log_format = '%(asctime)s [%(levelname)s] %(message)s'
     date_format = '%Y-%m-%d %H:%M:%S'
@@ -55,13 +57,14 @@ def setup_logging():
     logger.addHandler(console_handler)
 
     logger.info(f"Log file: {log_file}")
-    return logger
+    logger.info(f"CSV file: {csv_file}")
+    return logger, csv_file
 
 
 class JobDescriptionBackfiller:
     """Backfill missing job descriptions using undetected-chromedriver"""
 
-    def __init__(self, delay: float = 5.0, logger=None, headless: bool = True, use_xvfb: bool = False, include_inactive: bool = False):
+    def __init__(self, delay: float = 5.0, logger=None, headless: bool = True, use_xvfb: bool = False, include_inactive: bool = False, csv_file: str = None):
         self.delay = delay
         self.logger = logger or logging.getLogger('backfill')
         self.db = DatabaseManager(config)
@@ -71,6 +74,9 @@ class JobDescriptionBackfiller:
         self.driver = None
         self.virtual_display = None
         self.driver_restarts = 0
+        self.csv_file = csv_file
+        self.csv_writer = None
+        self.csv_handle = None
 
         self.stats = {
             'total': 0,
@@ -319,6 +325,38 @@ class JobDescriptionBackfiller:
             self.logger.error(f"  Database update failed: {e}")
             return False
 
+    def _init_csv(self):
+        """Initialize CSV file for logging scraped job descriptions"""
+        if self.csv_file:
+            self.csv_handle = open(self.csv_file, 'w', newline='', encoding='utf-8')
+            self.csv_writer = csv.writer(self.csv_handle)
+            # Write header
+            self.csv_writer.writerow(['job_id', 'job_title', 'url', 'suburb', 'description_length', 'job_description', 'scraped_at'])
+            self.logger.info(f"CSV logging enabled: {self.csv_file}")
+
+    def _close_csv(self):
+        """Close CSV file handle"""
+        if self.csv_handle:
+            self.csv_handle.close()
+            self.csv_handle = None
+            self.csv_writer = None
+
+    def _write_csv_row(self, job_id, title, url, suburb, description):
+        """Write a row to the CSV log file"""
+        if self.csv_writer:
+            # Extract text from HTML for cleaner CSV output
+            text_description = BeautifulSoup(description, 'lxml').get_text(separator=' ').strip()
+            self.csv_writer.writerow([
+                job_id,
+                title,
+                url,
+                suburb or '',
+                len(description),
+                text_description,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ])
+            self.csv_handle.flush()  # Ensure data is written immediately
+
     def run(self, limit: int = None):
         """Run the backfill process"""
         self.logger.info("Starting job description backfill...")
@@ -336,6 +374,7 @@ class JobDescriptionBackfiller:
 
         try:
             self._init_driver()
+            self._init_csv()
 
             for i, (job_id, url, title) in enumerate(jobs, 1):
                 self.logger.info(f"[{i}/{len(jobs)}] Processing job {job_id}: {title[:50]}...")
@@ -363,6 +402,8 @@ class JobDescriptionBackfiller:
                     if self.update_job(job_id, description, suburb):
                         self.logger.info(f"  Updated successfully (description: {len(description)} chars, suburb: {suburb})")
                         self.stats['success'] += 1
+                        # Write to CSV log
+                        self._write_csv_row(job_id, title, url, suburb, description)
                     else:
                         self.stats['failed'] += 1
                 else:
@@ -375,6 +416,7 @@ class JobDescriptionBackfiller:
 
         finally:
             self._close_driver()
+            self._close_csv()
 
         self._print_summary()
 
@@ -449,7 +491,7 @@ def main():
 
     args = parser.parse_args()
 
-    logger = setup_logging()
+    logger, csv_file = setup_logging()
     logger.info(f"Arguments: limit={args.limit}, delay={args.delay}, headless={args.headless}, xvfb={args.xvfb}, skip_ai={args.skip_ai}, include_inactive={args.include_inactive}")
 
     backfiller = JobDescriptionBackfiller(
@@ -457,7 +499,8 @@ def main():
         logger=logger,
         headless=args.headless,
         use_xvfb=args.xvfb,
-        include_inactive=args.include_inactive
+        include_inactive=args.include_inactive,
+        csv_file=csv_file
     )
     backfiller.run(limit=args.limit)
 
