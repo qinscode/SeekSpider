@@ -9,6 +9,7 @@ from scrapy.exceptions import CloseSpider
 from SeekSpider.core.ai_client import AIClient
 from SeekSpider.core.config import config
 from SeekSpider.core.database import DatabaseManager
+from SeekSpider.core.regions import AUSTRALIAN_REGIONS, DEFAULT_REGION, get_seek_location, is_valid_region
 from SeekSpider.items import SeekspiderItem
 from SeekSpider.scripts.backfill_job_descriptions import JobDescriptionBackfiller
 from SeekSpider.utils.salary_normalizer import SalaryNormalizer
@@ -23,7 +24,7 @@ class SeekSpider(scrapy.Spider):
     jd_url = "https://www.seek.com.au/job/"
     remove_text = '(Information & Communication Technology)'
 
-    def __init__(self, location=None, classification=None, *args, **kwargs):
+    def __init__(self, location=None, classification=None, region=None, *args, **kwargs):
         super(SeekSpider, self).__init__(*args, **kwargs)
 
         # Initialize core components
@@ -34,8 +35,30 @@ class SeekSpider(scrapy.Spider):
         # Initialize scraped job IDs set
         self.scraped_job_ids = set()
 
-        # Get location from parameter or default to Perth
-        self.location = location or 'All Perth WA'
+        # Handle region parameter
+        if region:
+            if is_valid_region(region):
+                self.region = region
+                self.location = get_seek_location(region)
+            else:
+                self.logger.warning(f"Invalid region '{region}', using default: {DEFAULT_REGION}")
+                self.logger.info(f"Available regions: {list(AUSTRALIAN_REGIONS.keys())}")
+                self.region = DEFAULT_REGION
+                self.location = get_seek_location(DEFAULT_REGION)
+        elif location:
+            # If location is provided but not region, try to infer region from location
+            self.location = location
+            # Try to find matching region
+            self.region = DEFAULT_REGION
+            for reg, loc in AUSTRALIAN_REGIONS.items():
+                if loc == location:
+                    self.region = reg
+                    break
+        else:
+            # Default to Perth
+            self.region = DEFAULT_REGION
+            self.location = get_seek_location(DEFAULT_REGION)
+
         self.classification = classification or '6281'
 
         # Initialize search parameters
@@ -51,7 +74,7 @@ class SeekSpider(scrapy.Spider):
             'locale': 'en-AU',
         }
 
-        self.logger.info(f"Spider initialized with location: {self.location}, classification: {self.classification}")
+        self.logger.info(f"Spider initialized - Region: {self.region}, Location: {self.location}, Classification: {self.classification}")
 
         # Initialize headers
         self.headers = {
@@ -163,6 +186,7 @@ class SeekSpider(scrapy.Spider):
         item['url'] = self.jd_url + str(data['id'])
         item['job_title'] = data.get('title', '')
         item['posted_date'] = data.get('listingDate', '')
+        item['region'] = self.region  # Set region from spider configuration
 
         # Location info
         if data.get('locations') and len(data['locations']) > 0:

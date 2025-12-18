@@ -20,17 +20,17 @@ from plombery import register_pipeline, task, Trigger, get_logger
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 SCRAPER_DIR = os.path.join(PROJECT_ROOT, "scraper")
 
-# Common Australian locations for Seek
-LOCATIONS = Literal[
-    "All Perth WA",
-    "All Sydney NSW",
-    "All Melbourne VIC",
-    "All Brisbane QLD",
-    "All Adelaide SA",
-    "All Canberra ACT",
-    "All Hobart TAS",
-    "All Darwin NT",
-    "All Australia",
+# Australian regions
+REGIONS = Literal[
+    "Perth",
+    "Sydney",
+    "Melbourne",
+    "Brisbane",
+    "Gold Coast",
+    "Adelaide",
+    "Canberra",
+    "Hobart",
+    "Darwin",
 ]
 
 # Job classifications
@@ -46,9 +46,9 @@ CLASSIFICATIONS = Literal[
 class SeekSpiderParams(BaseModel):
     """Parameters for Seek Spider"""
 
-    location: LOCATIONS = Field(
-        default="All Perth WA",
-        description="Location to search for jobs"
+    region: REGIONS = Field(
+        default="Perth",
+        description="Australian region to search for jobs"
     )
     classification: CLASSIFICATIONS = Field(
         default="6281",
@@ -78,7 +78,7 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
 
     logger = get_logger()
     logger.info("Starting Seek Spider")
-    logger.info(f"Parameters: location={params.location}, classification={params.classification}")
+    logger.info(f"Parameters: region={params.region}, classification={params.classification}")
     logger.info(f"Post-processing enabled: {params.run_post_processing}")
 
     try:
@@ -87,10 +87,10 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
         env['PYTHONPATH'] = f"{PROJECT_ROOT}:{SCRAPER_DIR}:{env.get('PYTHONPATH', '')}"
         env['SCRAPY_SETTINGS_MODULE'] = 'SeekSpider.settings'
 
-        # Build scrapy command with spider arguments
+        # Build scrapy command with spider arguments (using region instead of location)
         cmd = [
             sys.executable, '-m', 'scrapy', 'crawl', 'seek',
-            '-a', f'location={params.location}',
+            '-a', f'region={params.region}',
             '-a', f'classification={params.classification}',
             '-s', f'CONCURRENT_REQUESTS={params.concurrent_requests}',
             '-s', f'DOWNLOAD_DELAY={params.download_delay}',
@@ -130,7 +130,7 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
         result = {
             "status": "success",
             "message": "Seek Spider completed successfully",
-            "location": params.location,
+            "region": params.region,
             "classification": params.classification,
             "post_processing": params.run_post_processing,
             "timestamp": datetime.now().isoformat()
@@ -148,43 +148,157 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
         }
 
 
+# Perth timezone for all Australian regions
+PERTH_TZ = tz.gettz("Australia/Perth")
+
 register_pipeline(
     id="seek_spider",
     description="Scrape job listings from Seek.com.au",
     tasks=[run_seek_spider],
     params=SeekSpiderParams,
     triggers=[
-        # Perth - Daily 6 AM
+        # Perth - Daily 6 AM & 6 PM
         Trigger(
             id="perth_daily_6am",
             name="Perth Daily 6 AM",
             description="Scrape Perth IT jobs at 6:00 AM",
             params=SeekSpiderParams(
-                location="All Perth WA",
+                region="Perth",
                 classification="6281",
                 run_post_processing=True,
             ),
-            schedule=CronTrigger(
-                hour=6,
-                minute=0,
-                timezone=tz.gettz("Australia/Perth")
-            ),
+            schedule=CronTrigger(hour=6, minute=0, timezone=PERTH_TZ),
         ),
-        # Perth - Daily 6 PM
         Trigger(
             id="perth_daily_6pm",
             name="Perth Daily 6 PM",
             description="Scrape Perth IT jobs at 6:00 PM",
             params=SeekSpiderParams(
-                location="All Perth WA",
+                region="Perth",
                 classification="6281",
                 run_post_processing=True,
             ),
-            schedule=CronTrigger(
-                hour=18,
-                minute=0,
-                timezone=tz.gettz("Australia/Perth")
+            schedule=CronTrigger(hour=18, minute=0, timezone=PERTH_TZ),
+        ),
+
+        # Sydney - Daily 6 AM & 6 PM
+        Trigger(
+            id="sydney_daily_6am",
+            name="Sydney Daily 6 AM",
+            description="Scrape Sydney IT jobs at 6:00 AM",
+            params=SeekSpiderParams(
+                region="Sydney",
+                classification="6281",
+                run_post_processing=True,
             ),
+            schedule=CronTrigger(hour=6, minute=15, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="sydney_daily_6pm",
+            name="Sydney Daily 6 PM",
+            description="Scrape Sydney IT jobs at 6:00 PM",
+            params=SeekSpiderParams(
+                region="Sydney",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=18, minute=15, timezone=PERTH_TZ),
+        ),
+
+        # Melbourne - Daily 6 AM & 6 PM
+        Trigger(
+            id="melbourne_daily_6am",
+            name="Melbourne Daily 6 AM",
+            description="Scrape Melbourne IT jobs at 6:00 AM",
+            params=SeekSpiderParams(
+                region="Melbourne",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=6, minute=30, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="melbourne_daily_6pm",
+            name="Melbourne Daily 6 PM",
+            description="Scrape Melbourne IT jobs at 6:00 PM",
+            params=SeekSpiderParams(
+                region="Melbourne",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=18, minute=30, timezone=PERTH_TZ),
+        ),
+
+        # Brisbane - Daily 6 AM & 6 PM
+        Trigger(
+            id="brisbane_daily_6am",
+            name="Brisbane Daily 6 AM",
+            description="Scrape Brisbane IT jobs at 6:00 AM",
+            params=SeekSpiderParams(
+                region="Brisbane",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=6, minute=45, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="brisbane_daily_6pm",
+            name="Brisbane Daily 6 PM",
+            description="Scrape Brisbane IT jobs at 6:00 PM",
+            params=SeekSpiderParams(
+                region="Brisbane",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=18, minute=45, timezone=PERTH_TZ),
+        ),
+
+        # Adelaide - Daily 7 AM & 7 PM
+        Trigger(
+            id="adelaide_daily_7am",
+            name="Adelaide Daily 7 AM",
+            description="Scrape Adelaide IT jobs at 7:00 AM",
+            params=SeekSpiderParams(
+                region="Adelaide",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=7, minute=0, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="adelaide_daily_7pm",
+            name="Adelaide Daily 7 PM",
+            description="Scrape Adelaide IT jobs at 7:00 PM",
+            params=SeekSpiderParams(
+                region="Adelaide",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=19, minute=0, timezone=PERTH_TZ),
+        ),
+
+        # Canberra - Daily 7 AM & 7 PM
+        Trigger(
+            id="canberra_daily_7am",
+            name="Canberra Daily 7 AM",
+            description="Scrape Canberra IT jobs at 7:00 AM",
+            params=SeekSpiderParams(
+                region="Canberra",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=7, minute=15, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="canberra_daily_7pm",
+            name="Canberra Daily 7 PM",
+            description="Scrape Canberra IT jobs at 7:00 PM",
+            params=SeekSpiderParams(
+                region="Canberra",
+                classification="6281",
+                run_post_processing=True,
+            ),
+            schedule=CronTrigger(hour=19, minute=15, timezone=PERTH_TZ),
         ),
     ],
 )
@@ -228,6 +342,9 @@ async def reset_is_new(params: ResetIsNewParams) -> dict:
         # Connect to database
         conn = psycopg2.connect(**db_config)
         cursor = conn.cursor()
+
+        # Set timezone to Perth for all timestamp operations
+        cursor.execute("SET timezone = 'Australia/Perth'")
 
         # First, count how many records have IsNew = True
         cursor.execute(f'SELECT COUNT(*) FROM "{table_name}" WHERE "IsNew" = TRUE')

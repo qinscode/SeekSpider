@@ -10,8 +10,8 @@ class SeekspiderItem(scrapy.Item):
     pay_range = scrapy.Field()
     suburb = scrapy.Field()
     area = scrapy.Field()
+    region = scrapy.Field()  # Australian region (e.g., Perth, Sydney, Melbourne)
     url = scrapy.Field()
     advertiser_id = scrapy.Field()
     job_type = scrapy.Field()
     posted_date = scrapy.Field()
-    pass

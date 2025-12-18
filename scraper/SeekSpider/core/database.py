@@ -27,7 +27,10 @@ class DatabaseManager:
                 password=self.config.POSTGRESQL_PASSWORD,
                 database=self.config.POSTGRESQL_DATABASE
             )
-            self.log('debug', 'Database connection established')
+            # Set timezone to Perth for all timestamp operations
+            with conn.cursor() as cur:
+                cur.execute("SET timezone = 'Australia/Perth'")
+            self.log('debug', 'Database connection established (timezone: Australia/Perth)')
             yield conn
         except Exception as e:
             self.log('error', f'Database connection error: {str(e)}')

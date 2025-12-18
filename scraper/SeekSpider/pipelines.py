@@ -76,6 +76,7 @@ class JsonExportPipeline:
             'pay_range': item_dict.get('pay_range'),
             'suburb': item_dict.get('suburb'),
             'area': item_dict.get('area'),
+            'region': item_dict.get('region'),
             'url': item_dict.get('url'),
             'advertiser_id': item_dict.get('advertiser_id'),
             'posted_date': item_dict.get('posted_date'),
@@ -109,11 +110,20 @@ class SeekspiderPipeline(object):
         )
         self.cursor = self.connection.cursor()
 
-        # Load all job IDs into memory, regardless of their status
+        # Set timezone to Perth for all timestamp operations
+        self.cursor.execute("SET timezone = 'Australia/Perth'")
+
+        # Store current region for later use in spider_closed
+        self.current_region = getattr(spider, 'region', 'Perth')
+
+        # Load job IDs for the current region into memory
         try:
-            self.cursor.execute(f'SELECT "Id" FROM "{config.POSTGRESQL_TABLE}"')
+            self.cursor.execute(
+                f'SELECT "Id" FROM "{config.POSTGRESQL_TABLE}" WHERE "Region" = %s OR "Region" IS NULL',
+                (self.current_region,)
+            )
             self.existing_job_ids = set(str(row[0]) for row in self.cursor.fetchall())
-            spider.logger.info(f"Loaded {len(self.existing_job_ids)} existing job IDs")
+            spider.logger.info(f"Loaded {len(self.existing_job_ids)} existing job IDs for region: {self.current_region}")
         except Exception as e:
             spider.logger.error(f"Error loading existing job IDs: {str(e)}")
             self.existing_job_ids = set()
@@ -129,16 +139,16 @@ class SeekspiderPipeline(object):
         if job_id in self.existing_job_ids:
             spider.logger.info(f"Job ID: {job_id} already exists. Updating instead of inserting.")
 
-            # Update existing job
+            # Update existing job (JobDescription is handled by backfill script, not updated here)
             update_sql = """
-                UPDATE "{}" SET 
+                UPDATE "{}" SET
                     "JobTitle" = %s,
                     "BusinessName" = %s,
                     "WorkType" = %s,
-                    "JobDescription" = %s,
                     "PayRange" = %s,
                     "Suburb" = %s,
                     "Area" = %s,
+                    "Region" = %s,
                     "Url" = %s,
                     "AdvertiserId" = %s,
                     "JobType" = %s,
@@ -158,10 +168,10 @@ class SeekspiderPipeline(object):
                     item.get('job_title'),
                     item.get('business_name'),
                     item.get('work_type'),
-                    item.get('job_description'),
                     item.get('pay_range'),
                     item.get('suburb'),
                     item.get('area'),
+                    item.get('region'),
                     item.get('url'),
                     advertiser_id,
                     item.get('job_type'),
@@ -182,24 +192,25 @@ class SeekspiderPipeline(object):
         # Handle new job insertion
         insert_sql = """
             INSERT INTO "{}" (
-                "Id", 
-                "JobTitle", 
-                "BusinessName", 
-                "WorkType", 
-                "JobDescription", 
-                "PayRange", 
-                "Suburb", 
-                "Area", 
-                "Url", 
-                "AdvertiserId", 
+                "Id",
+                "JobTitle",
+                "BusinessName",
+                "WorkType",
+                "JobDescription",
+                "PayRange",
+                "Suburb",
+                "Area",
+                "Region",
+                "Url",
+                "AdvertiserId",
                 "JobType",
                 "CreatedAt",
                 "UpdatedAt",
                 "IsNew",
                 "PostedDate"
-            ) 
+            )
             VALUES (
-                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now(),true,%s
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now(),true,%s
             )
             """.format(config.POSTGRESQL_TABLE)
 
@@ -217,6 +228,7 @@ class SeekspiderPipeline(object):
                 item.get('pay_range'),
                 item.get('suburb'),
                 item.get('area'),
+                item.get('region'),
                 item.get('url'),
                 advertiser_id,
                 item.get('job_type'),
@@ -240,30 +252,32 @@ class SeekspiderPipeline(object):
         scraped_job_ids = spider.crawler.stats.get_value('scraped_job_ids', set())
 
         # 找出在数据库中但不在本次爬取中的职位ID（已过期的职位）
+        # 只针对当前地区
         invalid_job_ids = self.existing_job_ids - scraped_job_ids
 
         if invalid_job_ids:
-            spider.logger.info(f"Found {len(invalid_job_ids)} jobs not in current scrape")
+            spider.logger.info(f"Found {len(invalid_job_ids)} jobs not in current scrape for region: {self.current_region}")
             sample_invalid_jobs = list(invalid_job_ids)[:10]
             spider.logger.info(f"Sample of jobs not in current scrape: {sample_invalid_jobs}")
 
-            # 将不存在的职位标记为失效
+            # 将不存在的职位标记为失效（只针对当前地区）
             update_expired_sql = f'''
                 UPDATE "{config.POSTGRESQL_TABLE}"
-                SET "IsActive" = FALSE, 
+                SET "IsActive" = FALSE,
                     "UpdatedAt" = now(),
                     "ExpiryDate" = now()
                 WHERE "Id" = ANY(%s::integer[])
                 AND "IsActive" = TRUE
+                AND ("Region" = %s OR "Region" IS NULL)
             '''
             # Convert string IDs to integers before passing to SQL
             invalid_job_ids_int = [int(job_id) for job_id in invalid_job_ids]
-            self.cursor.execute(update_expired_sql, (invalid_job_ids_int,))
+            self.cursor.execute(update_expired_sql, (invalid_job_ids_int, self.current_region))
             expired_rows = self.cursor.rowcount
             self.connection.commit()
-            spider.logger.info(f"Updated {expired_rows} jobs to IsActive=False")
+            spider.logger.info(f"Updated {expired_rows} jobs to IsActive=False for region: {self.current_region}")
         else:
-            spider.logger.info("No expired jobs found")
+            spider.logger.info(f"No expired jobs found for region: {self.current_region}")
 
         # 关闭数据库连接
         self.cursor.close()
