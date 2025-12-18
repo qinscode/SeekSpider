@@ -1,11 +1,15 @@
 import json
 import os
+import sys
 from datetime import datetime
 
-from SeekSpider.core.ai_client import AIClient
-from SeekSpider.core.config import config
-from SeekSpider.core.database import DatabaseManager
-from SeekSpider.core.logger import Logger
+# Add parent directory to path for relative imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.ai_client import AIClient
+from core.config import config
+from core.database import DatabaseManager
+from core.logger import Logger
 
 
 class SalaryNormalizer:
@@ -93,7 +97,7 @@ class SalaryNormalizer:
     def process_all_jobs(self):
         """Process all jobs needing salary normalization"""
         try:
-            # 首先检查数据情况
+            # First check database status
             debug_query = f'''
                 SELECT 
                     COUNT(*) as total,
@@ -111,7 +115,7 @@ class SalaryNormalizer:
             self.logger.info(f"Null MinSalary: {debug_result[0][3]}")
             self.logger.info(f"Null MaxSalary: {debug_result[0][4]}")
 
-            # 首先批量更新空的 PayRange
+            # First batch update jobs with empty PayRange
             batch_update_query = f'''
                 UPDATE "{self.db.config.POSTGRESQL_TABLE}"
                 SET 
@@ -124,7 +128,7 @@ class SalaryNormalizer:
             affected_rows = self.db.execute_update(batch_update_query)
             self.logger.info(f"Batch updated {affected_rows} jobs with empty PayRange to zero salary")
 
-            # 然后处理有薪资信息的工作
+            # Then process jobs with salary information
             query = f'''
                 SELECT "Id", "PayRange"
                 FROM "{self.db.config.POSTGRESQL_TABLE}" 

@@ -13,10 +13,13 @@ import argparse
 import csv
 import logging
 import os
+import queue
 import random
 import sys
+import threading
 import time
 from datetime import datetime
+from typing import Optional
 
 from bs4 import BeautifulSoup
 
@@ -70,7 +73,14 @@ def setup_logging(region: str = None):
 class JobDescriptionBackfiller:
     """Backfill missing job descriptions using undetected-chromedriver"""
 
-    def __init__(self, delay: float = 5.0, logger=None, headless: bool = True, use_xvfb: bool = False, include_inactive: bool = False, csv_file: str = None):
+    # Restart driver every N jobs to prevent memory leaks and crashes
+    DRIVER_RESTART_INTERVAL = 30
+    # Maximum consecutive failures before forcing driver restart
+    MAX_CONSECUTIVE_FAILURES = 3
+    # Maximum retries for a single job
+    MAX_JOB_RETRIES = 2
+
+    def __init__(self, delay: float = 5.0, logger=None, headless: bool = True, use_xvfb: bool = False, include_inactive: bool = False, csv_file: str = None, enable_async_ai: bool = True):
         self.delay = delay
         self.logger = logger or logging.getLogger('backfill')
         self.db = DatabaseManager(config)
@@ -83,6 +93,17 @@ class JobDescriptionBackfiller:
         self.csv_file = csv_file
         self.csv_writer = None
         self.csv_handle = None
+        self.enable_async_ai = enable_async_ai
+
+        # Counter for periodic restart
+        self.jobs_since_restart = 0
+        self.consecutive_failures = 0
+
+        # Async AI analysis queue and thread
+        self.ai_queue: queue.Queue = queue.Queue()
+        self.ai_thread: Optional[threading.Thread] = None
+        self.ai_stop_event = threading.Event()
+        self.ai_analyzer = None
 
         self.stats = {
             'total': 0,
@@ -90,6 +111,8 @@ class JobDescriptionBackfiller:
             'failed': 0,
             'cloudflare_blocked': 0,
             'driver_restarts': 0,
+            'ai_analyzed': 0,
+            'ai_failed': 0,
         }
 
     def _init_driver(self):
@@ -255,9 +278,9 @@ class JobDescriptionBackfiller:
         except:
             return False
 
-    def _restart_driver(self):
+    def _restart_driver(self, reason: str = "unknown"):
         """Restart the Chrome driver"""
-        self.logger.warning("  Driver crashed, restarting...")
+        self.logger.warning(f"  Restarting driver (reason: {reason})...")
         self.stats['driver_restarts'] += 1
 
         # Close existing driver (if any)
@@ -273,7 +296,97 @@ class JobDescriptionBackfiller:
 
         # Reinitialize driver (keep virtual display running)
         self._init_driver()
+        self.jobs_since_restart = 0
+        self.consecutive_failures = 0
         self.logger.info("  Driver restarted successfully")
+
+    def _periodic_restart_check(self):
+        """Check if driver should be restarted based on job count"""
+        if self.jobs_since_restart >= self.DRIVER_RESTART_INTERVAL:
+            self.logger.info(f"Periodic restart: processed {self.jobs_since_restart} jobs since last restart")
+            self._restart_driver(reason=f"periodic restart after {self.DRIVER_RESTART_INTERVAL} jobs")
+            return True
+        return False
+
+    def _init_async_ai(self):
+        """Initialize async AI analysis thread"""
+        if not self.enable_async_ai:
+            return
+
+        try:
+            from core.ai_client import AIClient
+            from core.logger import Logger
+            from utils.tech_stack_analyzer import TechStackAnalyzer
+
+            # Create a separate database connection for AI thread
+            ai_db = DatabaseManager(config)
+            ai_client = AIClient(config)
+            ai_logger = Logger("async_ai")
+
+            self.ai_analyzer = TechStackAnalyzer(ai_db, ai_client, ai_logger)
+
+            # Start AI worker thread
+            self.ai_thread = threading.Thread(target=self._ai_worker, daemon=True)
+            self.ai_thread.start()
+            self.logger.info("Async AI analysis thread started")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize async AI: {e}")
+            self.enable_async_ai = False
+
+    def _ai_worker(self):
+        """Worker thread for async AI analysis"""
+        self.logger.info("AI worker thread running...")
+
+        while not self.ai_stop_event.is_set():
+            try:
+                # Wait for a job with timeout to allow checking stop event
+                try:
+                    job_id, description = self.ai_queue.get(timeout=1.0)
+                except queue.Empty:
+                    continue
+
+                if job_id is None:  # Sentinel value to stop
+                    break
+
+                # Perform AI analysis
+                try:
+                    result = self.ai_analyzer.analyze_job(job_id, description)
+                    if result:
+                        self.stats['ai_analyzed'] += 1
+                        self.logger.info(f"  [AI] Analyzed job {job_id}: {result}")
+                    else:
+                        self.stats['ai_failed'] += 1
+                except Exception as e:
+                    self.stats['ai_failed'] += 1
+                    self.logger.warning(f"  [AI] Failed to analyze job {job_id}: {e}")
+
+                self.ai_queue.task_done()
+
+            except Exception as e:
+                self.logger.error(f"AI worker error: {e}")
+
+        self.logger.info("AI worker thread stopped")
+
+    def _queue_ai_analysis(self, job_id: int, description: str):
+        """Queue a job for async AI analysis"""
+        if self.enable_async_ai and self.ai_thread and self.ai_thread.is_alive():
+            try:
+                self.ai_queue.put_nowait((job_id, description))
+            except queue.Full:
+                self.logger.warning(f"  AI queue full, skipping analysis for job {job_id}")
+
+    def _stop_async_ai(self):
+        """Stop the async AI analysis thread"""
+        if self.ai_thread and self.ai_thread.is_alive():
+            self.logger.info("Stopping async AI thread...")
+            self.ai_stop_event.set()
+            # Put sentinel value to unblock the queue
+            try:
+                self.ai_queue.put_nowait((None, None))
+            except:
+                pass
+            self.ai_thread.join(timeout=10)
+            self.logger.info("Async AI thread stopped")
 
     def fetch_job_description(self, url: str) -> tuple:
         """Fetch job description from URL using Chrome"""
@@ -381,26 +494,33 @@ class JobDescriptionBackfiller:
         try:
             self._init_driver()
             self._init_csv()
+            self._init_async_ai()
 
             for i, (job_id, url, title) in enumerate(jobs, 1):
                 self.logger.info(f"[{i}/{len(jobs)}] Processing job {job_id}: {title[:50]}...")
 
-                description, suburb, status = self.fetch_job_description(url)
+                # Check for periodic restart before processing
+                self._periodic_restart_check()
 
-                # If driver crashed, restart and retry once
-                if status == 'driver_crashed':
-                    self.logger.warning("  Driver crashed, restarting and retrying...")
-                    self._restart_driver()
-                    time.sleep(2)
-                    description, suburb, status = self.fetch_job_description(url)
+                # Try to fetch job description with retry logic
+                description, suburb, status = self._fetch_with_retry(url)
 
                 if status == 'cloudflare':
                     self.logger.warning("  Cloudflare blocked - skipping")
                     self.stats['cloudflare_blocked'] += 1
+                    self.consecutive_failures += 1
                     time.sleep(self.delay * 2)
+
+                    # Check if too many consecutive failures
+                    if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                        self.logger.warning(f"  {self.consecutive_failures} consecutive failures, restarting driver...")
+                        self._restart_driver(reason="consecutive failures")
                     continue
 
                 if status == 'success' and description:
+                    # Reset failure counter on success
+                    self.consecutive_failures = 0
+
                     # Log first 100 chars of description
                     text_only = BeautifulSoup(description, 'lxml').get_text()[:100].replace('\n', ' ').strip()
                     self.logger.info(f"  Description preview: {text_only}...")
@@ -410,21 +530,70 @@ class JobDescriptionBackfiller:
                         self.stats['success'] += 1
                         # Write to CSV log
                         self._write_csv_row(job_id, title, url, suburb, description)
+
+                        # Queue for async AI analysis (use the plain text for AI)
+                        text_description = BeautifulSoup(description, 'lxml').get_text(separator=' ').strip()
+                        self._queue_ai_analysis(job_id, text_description)
                     else:
                         self.stats['failed'] += 1
+                        self.consecutive_failures += 1
                 else:
                     self.logger.warning(f"  Failed: {status}")
                     self.stats['failed'] += 1
+                    self.consecutive_failures += 1
+
+                    # Check if too many consecutive failures
+                    if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                        self.logger.warning(f"  {self.consecutive_failures} consecutive failures, restarting driver...")
+                        self._restart_driver(reason="consecutive failures")
+
+                # Increment job counter
+                self.jobs_since_restart += 1
 
                 # Random delay
                 delay = self.delay + random.uniform(0, 2)
                 time.sleep(delay)
 
         finally:
+            self._stop_async_ai()
             self._close_driver()
             self._close_csv()
 
         self._print_summary()
+
+    def _fetch_with_retry(self, url: str) -> tuple:
+        """Fetch job description with retry logic"""
+        for attempt in range(self.MAX_JOB_RETRIES + 1):
+            try:
+                # Check if driver is alive
+                if not self._is_driver_alive():
+                    self._restart_driver(reason="driver not responding")
+                    time.sleep(2)
+
+                description, suburb, status = self.fetch_job_description(url)
+
+                # Handle driver crash
+                if status == 'driver_crashed':
+                    self.logger.warning(f"  Driver crashed (attempt {attempt + 1}/{self.MAX_JOB_RETRIES + 1})")
+                    self._restart_driver(reason="driver crashed")
+                    time.sleep(2)
+
+                    if attempt < self.MAX_JOB_RETRIES:
+                        continue
+                    else:
+                        return None, None, 'max_retries_exceeded'
+
+                return description, suburb, status
+
+            except Exception as e:
+                self.logger.error(f"  Unexpected error (attempt {attempt + 1}): {e}")
+                if attempt < self.MAX_JOB_RETRIES:
+                    self._restart_driver(reason=f"exception: {e}")
+                    time.sleep(2)
+                else:
+                    return None, None, f'exception: {e}'
+
+        return None, None, 'max_retries_exceeded'
 
     def _print_summary(self):
         """Print summary"""
@@ -437,6 +606,11 @@ class JobDescriptionBackfiller:
         self.logger.info(f"Cloudflare blocked: {self.stats['cloudflare_blocked']}")
         self.logger.info(f"Driver restarts: {self.stats['driver_restarts']}")
         self.logger.info(f"Success rate: {self.stats['success']/max(self.stats['total'],1)*100:.1f}%")
+        if self.enable_async_ai:
+            self.logger.info("-" * 50)
+            self.logger.info("AI ANALYSIS (async)")
+            self.logger.info(f"Jobs analyzed: {self.stats['ai_analyzed']}")
+            self.logger.info(f"AI failures: {self.stats['ai_failed']}")
         self.logger.info("=" * 50)
 
 
@@ -447,11 +621,11 @@ def run_ai_analysis(logger):
     logger.info("=" * 50)
 
     try:
-        from SeekSpider.core.ai_client import AIClient
-        from SeekSpider.core.database import DatabaseManager
-        from SeekSpider.core.logger import Logger
-        from SeekSpider.utils.tech_stack_analyzer import TechStackAnalyzer
-        from SeekSpider.utils.salary_normalizer import SalaryNormalizer
+        from core.ai_client import AIClient
+        from core.database import DatabaseManager
+        from core.logger import Logger
+        from utils.tech_stack_analyzer import TechStackAnalyzer
+        from utils.salary_normalizer import SalaryNormalizer
 
         # Initialize components
         db_manager = DatabaseManager(config)
@@ -491,16 +665,20 @@ def main():
     parser.add_argument('--xvfb', action='store_true',
                         help='Use virtual display (Xvfb) for running in containers or headless environments')
     parser.add_argument('--skip-ai', action='store_true',
-                        help='Skip AI analysis after backfill')
+                        help='Skip AI analysis after backfill (post-processing)')
+    parser.add_argument('--no-async-ai', action='store_true',
+                        help='Disable async AI analysis during scraping (enabled by default)')
     parser.add_argument('--include-inactive', action='store_true',
                         help='Include inactive jobs in backfill (default: only active jobs)')
     parser.add_argument('--region', type=str, default=None,
                         help='Region for output organization (e.g., Sydney, Perth)')
+    parser.add_argument('--restart-interval', type=int, default=30,
+                        help='Restart Chrome driver every N jobs (default: 30)')
 
     args = parser.parse_args()
 
     logger, csv_file = setup_logging(region=args.region)
-    logger.info(f"Arguments: limit={args.limit}, delay={args.delay}, headless={args.headless}, xvfb={args.xvfb}, skip_ai={args.skip_ai}, include_inactive={args.include_inactive}, region={args.region}")
+    logger.info(f"Arguments: limit={args.limit}, delay={args.delay}, headless={args.headless}, xvfb={args.xvfb}, skip_ai={args.skip_ai}, no_async_ai={args.no_async_ai}, include_inactive={args.include_inactive}, region={args.region}, restart_interval={args.restart_interval}")
 
     backfiller = JobDescriptionBackfiller(
         delay=args.delay,
@@ -508,8 +686,14 @@ def main():
         headless=args.headless,
         use_xvfb=args.xvfb,
         include_inactive=args.include_inactive,
-        csv_file=csv_file
+        csv_file=csv_file,
+        enable_async_ai=not args.no_async_ai
     )
+
+    # Override restart interval if specified
+    if args.restart_interval:
+        backfiller.DRIVER_RESTART_INTERVAL = args.restart_interval
+
     backfiller.run(limit=args.limit)
 
     # Run AI analysis if backfill was successful and not skipped

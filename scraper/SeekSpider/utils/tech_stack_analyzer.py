@@ -1,21 +1,25 @@
 import json
 import os
+import sys
 import time
 from datetime import datetime
 from functools import wraps
 
-from SeekSpider.core.ai_client import AIClient
-from SeekSpider.core.config import config
-from SeekSpider.core.database import DatabaseManager
-from SeekSpider.core.logger import Logger
+# Add parent directory to path for relative imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.ai_client import AIClient
+from core.config import config
+from core.database import DatabaseManager
+from core.logger import Logger
 
 def retry_on_db_error(max_retries=3, delay=5):
     """
-    数据库操作重试装饰器
-    
+    Database operation retry decorator.
+
     Args:
-        max_retries (int): 最大重试次数
-        delay (int): 重试间隔（秒）
+        max_retries (int): Maximum number of retries
+        delay (int): Delay between retries in seconds
     """
     def decorator(func):
         @wraps(func)
@@ -27,7 +31,7 @@ def retry_on_db_error(max_retries=3, delay=5):
                 except Exception as e:
                     retries += 1
                     if "Cannot allocate memory" in str(e) or "connection" in str(e).lower():
-                        self = args[0]  # 获取类实例
+                        self = args[0]  # Get class instance
                         self.logger.warning(
                             f"Database operation failed (attempt {retries}/{max_retries}): {str(e)}"
                             f"\nRetrying in {delay} seconds..."
@@ -83,7 +87,7 @@ class TechStackAnalyzer:
     def analyze_job(self, job_id, description):
         """Analyze a single job's tech stack"""
         try:
-            # 添加 description 预览到日志
+            # Add description preview to log
             desc_preview = (description[:50] + '...') if len(description) > 50 else description
             self.logger.info(f"Analyzing job {job_id} - Description: {desc_preview}")
 
@@ -109,7 +113,7 @@ class TechStackAnalyzer:
 
         except Exception as e:
             self.logger.error(f"Error analyzing job {job_id} - Description: {desc_preview}: {str(e)}")
-            raise  # 让装饰器捕获异常并进行重试
+            raise  # Let decorator catch exception and retry
 
     @retry_on_db_error()
     def process_all_jobs(self):
