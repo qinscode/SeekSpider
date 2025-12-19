@@ -336,113 +336,178 @@ register_pipeline(
 
 
 # ============================================================================
-# Daily Reset IsNew Pipeline
+# Backfill Job Descriptions Pipeline
 # ============================================================================
 
-class ResetIsNewParams(BaseModel):
-    """Parameters for Reset IsNew task"""
-    dry_run: bool = Field(
+class BackfillParams(BaseModel):
+    """Parameters for Backfill Job Descriptions task"""
+
+    limit: int = Field(
+        default=None,
+        description="Maximum number of jobs to process (default: no limit)",
+        ge=1,
+    )
+    delay: float = Field(
+        default=5.0,
+        ge=0.5,
+        le=30.0,
+        description="Base delay between requests in seconds"
+    )
+    headless: bool = Field(
+        default=True,
+        description="Run browser in headless mode"
+    )
+    region: REGIONS = Field(
+        default="Perth",
+        description="Region for output organization"
+    )
+    include_inactive: bool = Field(
         default=False,
-        description="If True, only show what would be changed without making changes"
+        description="Include inactive jobs in backfill"
+    )
+    skip_ai: bool = Field(
+        default=False,
+        description="Skip AI analysis after backfill"
+    )
+    restart_interval: int = Field(
+        default=30,
+        ge=5,
+        le=100,
+        description="Restart Chrome driver every N jobs"
     )
 
 
 @task
-async def reset_is_new(params: ResetIsNewParams) -> dict:
-    """Reset IsNew field to False for all jobs at midnight"""
+async def run_backfill(params: BackfillParams) -> dict:
+    """Run the backfill script to fetch missing job descriptions"""
 
     logger = get_logger()
-    logger.info("Starting daily IsNew reset task")
+    logger.info("Starting Backfill Job Descriptions")
+    logger.info(f"Parameters: limit={params.limit}, delay={params.delay}, region={params.region}")
+    logger.info(f"Headless mode: {params.headless}, Include inactive: {params.include_inactive}")
 
-    def _reset_is_new_sync():
-        """Synchronous database operation to be run in thread pool"""
-        try:
-            # Get database configuration from environment
-            db_config = {
-                'host': os.getenv('POSTGRESQL_HOST'),
-                'port': int(os.getenv('POSTGRESQL_PORT', 5432)),
-                'user': os.getenv('POSTGRESQL_USER'),
-                'password': os.getenv('POSTGRESQL_PASSWORD'),
-                'database': os.getenv('POSTGRESQL_DATABASE'),
-            }
-            table_name = os.getenv('POSTGRESQL_TABLE', 'seek_jobs')
+    # Get current run_id from context
+    pipeline_run = run_context.get()
+    run_id = pipeline_run.id if pipeline_run else None
 
-            # Validate config
-            missing = [k for k, v in db_config.items() if not v and k != 'port']
-            if missing:
-                raise ValueError(f"Missing database config: {missing}")
+    process = None
+    try:
+        # Set up environment
+        env = os.environ.copy()
+        env['PYTHONPATH'] = f"{PROJECT_ROOT}:{SCRAPER_DIR}:{env.get('PYTHONPATH', '')}"
 
-            # Connect to database
-            conn = psycopg2.connect(**db_config)
-            cursor = conn.cursor()
+        # Build backfill command
+        backfill_script = os.path.join(SCRAPER_DIR, 'SeekSpider', 'scripts', 'backfill_job_descriptions.py')
 
-            # Set timezone to Perth for all timestamp operations
-            cursor.execute("SET timezone = 'Australia/Perth'")
+        cmd = [sys.executable, backfill_script]
 
-            # First, count how many records have IsNew = True
-            cursor.execute(f'SELECT COUNT(*) FROM "{table_name}" WHERE "IsNew" = TRUE')
-            count_before = cursor.fetchone()[0]
-            logger.info(f"Found {count_before} jobs with IsNew=True")
+        if params.limit:
+            cmd.extend(['--limit', str(params.limit)])
 
-            if params.dry_run:
-                logger.info("DRY RUN: Would reset IsNew to False for all jobs")
-                cursor.close()
-                conn.close()
+        cmd.extend(['--delay', str(params.delay)])
+        cmd.extend(['--region', params.region])
+        cmd.extend(['--restart-interval', str(params.restart_interval)])
+
+        if params.headless:
+            cmd.append('--headless')
+
+        if params.include_inactive:
+            cmd.append('--include-inactive')
+
+        if params.skip_ai:
+            cmd.append('--skip-ai')
+
+        logger.info(f"Running command: {' '.join(cmd)}")
+        logger.info(f"Working directory: {SCRAPER_DIR}")
+
+        # Run the backfill script using async subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=SCRAPER_DIR,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        # Register the process if we have a run_id
+        if run_id:
+            _running_processes[run_id] = process
+            logger.info(f"Registered process for run #{run_id} (PID: {process.pid})")
+
+        # Stream output to logger asynchronously
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            line = line.decode('utf-8').strip()
+            if line:
+                logger.info(line)
+
+        # Wait for process to complete
+        return_code = await process.wait()
+
+        if return_code != 0:
+            # Check if it was cancelled
+            if return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
+                logger.info(f"Backfill was cancelled (return code: {return_code})")
                 return {
-                    "status": "dry_run",
-                    "jobs_would_be_reset": count_before,
+                    "status": "cancelled",
+                    "message": "Backfill was cancelled by user",
                     "timestamp": datetime.now().isoformat()
                 }
 
-            # Reset IsNew to False for all jobs
-            cursor.execute(f'''
-                UPDATE "{table_name}"
-                SET "IsNew" = FALSE, "UpdatedAt" = now()
-                WHERE "IsNew" = TRUE
-            ''')
-            affected_rows = cursor.rowcount
-            conn.commit()
-
-            logger.info(f"Reset {affected_rows} jobs to IsNew=False")
-
-            cursor.close()
-            conn.close()
-
-            return {
-                "status": "success",
-                "jobs_reset": affected_rows,
-                "timestamp": datetime.now().isoformat()
-            }
-
-        except Exception as e:
-            logger.error(f"Reset IsNew failed: {str(e)}", exc_info=True)
             return {
                 "status": "error",
-                "error": str(e),
+                "error": f"Backfill exited with code {return_code}",
                 "timestamp": datetime.now().isoformat()
             }
 
-    # Run the synchronous database operation in a thread pool to avoid blocking
-    return await asyncio.to_thread(_reset_is_new_sync)
+        result = {
+            "status": "success",
+            "message": "Backfill completed successfully",
+            "region": params.region,
+            "limit": params.limit,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        logger.info("Backfill completed successfully")
+        return result
+
+    except asyncio.CancelledError:
+        # Task was cancelled
+        logger.info("Task was cancelled")
+        if process and process.returncode is None:
+            logger.info(f"Terminating process PID: {process.pid}")
+            try:
+                process.terminate()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"Process did not terminate gracefully, killing PID: {process.pid}")
+                process.kill()
+                await process.wait()
+
+        # Re-raise the exception so executor marks the task as cancelled
+        raise
+
+    except Exception as e:
+        logger.error(f"Backfill failed: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    finally:
+        # Always unregister the process
+        if run_id and run_id in _running_processes:
+            del _running_processes[run_id]
+            logger.info(f"Unregistered process for run #{run_id}")
 
 
 register_pipeline(
-    id="reset_is_new",
-    description="Reset IsNew field to False for all jobs (run at midnight)",
-    tasks=[reset_is_new],
-    params=ResetIsNewParams,
-    triggers=[
-        # Daily at midnight Perth time
-        Trigger(
-            id="daily_midnight",
-            name="Daily Midnight Reset",
-            description="Reset IsNew to False at midnight Perth time",
-            params=ResetIsNewParams(dry_run=False),
-            schedule=CronTrigger(
-                hour=0,
-                minute=0,
-                timezone=tz.gettz("Australia/Perth")
-            ),
-        ),
-    ],
+    id="backfill_job_descriptions",
+    description="Backfill missing job descriptions from Seek job pages",
+    tasks=[run_backfill],
+    params=BackfillParams,
+    triggers=[],  # No automatic triggers - run manually as needed
 )

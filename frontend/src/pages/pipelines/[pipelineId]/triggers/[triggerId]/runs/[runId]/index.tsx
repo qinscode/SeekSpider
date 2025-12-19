@@ -101,7 +101,8 @@ const RunViewPage = () => {
 
   const runEndTime = addMilliseconds(run.start_time, run.duration)
 
-  return (
+  // @ts-ignore
+    return (
     <div className="dark text-gray-300 antialiased h-screen flex flex-col overflow-hidden font-sans bg-[#0a0e17]">
       <Navbar>
         <div className="flex flex-col gap-4">

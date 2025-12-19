@@ -10,10 +10,8 @@ from scrapy.exceptions import CloseSpider
 from SeekSpider.core.ai_client import AIClient
 from SeekSpider.core.config import config
 from SeekSpider.core.database import DatabaseManager
-from SeekSpider.core.output_manager import OutputManager
 from SeekSpider.core.regions import AUSTRALIAN_REGIONS, DEFAULT_REGION, get_seek_location, is_valid_region
 from SeekSpider.items import SeekspiderItem
-from SeekSpider.scripts.backfill_job_descriptions import JobDescriptionBackfiller
 from SeekSpider.utils.salary_normalizer import SalaryNormalizer
 from SeekSpider.utils.tech_frequency_analyzer import TechStatsAnalyzer
 from SeekSpider.utils.tech_stack_analyzer import TechStackAnalyzer
@@ -298,51 +296,8 @@ class SeekSpider(scrapy.Spider):
         """Run post-scraping analysis"""
         self.logger.info("Starting post-processing...")
 
-        # Step 1: Backfill missing job descriptions
-        self.logger.info("Step 1: Running job description backfill...")
-        try:
-            # Create output files for backfill logging
-            output_manager = OutputManager('backfill_logs', region=self.region)
-            output_dir = output_manager.setup()
-            csv_file = output_manager.get_file_path(f'backfill_{output_manager.timestamp}.csv')
-            log_file = output_manager.get_file_path(f'backfill_{output_manager.timestamp}.log')
-
-            # Create a separate logger for backfill that writes to both spider log and backfill log
-            backfill_logger = logging.getLogger('backfill')
-            backfill_logger.setLevel(logging.INFO)
-            backfill_logger.handlers.clear()
-
-            # Add file handler for backfill log
-            backfill_file_handler = logging.FileHandler(log_file, encoding='utf-8')
-            backfill_file_handler.setFormatter(logging.Formatter(
-                '%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'
-            ))
-            backfill_logger.addHandler(backfill_file_handler)
-
-            # Also propagate to spider logger
-            backfill_logger.propagate = False
-            backfill_logger.addHandler(logging.StreamHandler())
-
-            backfiller = JobDescriptionBackfiller(
-                delay=5.0,
-                logger=backfill_logger,
-                headless=False,  # Use visible browser for better Cloudflare bypass
-                use_xvfb=False,
-                csv_file=csv_file
-            )
-            backfiller.run(limit=None)  # Process all jobs without description
-            self.logger.info(f"Backfill completed: {backfiller.stats['success']} jobs updated")
-            self.logger.info(f"Backfill CSV: {csv_file}")
-            self.logger.info(f"Backfill log: {log_file}")
-
-            # Close backfill log handler
-            backfill_file_handler.close()
-            backfill_logger.removeHandler(backfill_file_handler)
-        except Exception as e:
-            self.logger.error(f"Backfill error: {str(e)}")
-
-        # Step 2: Initialize analyzers
-        self.logger.info("Step 2: Running AI analysis...")
+        # Run AI analysis
+        self.logger.info("Running AI analysis...")
         tech_analyzer = TechStackAnalyzer(self.db, self.ai_client, self.logger)
         salary_normalizer = SalaryNormalizer(self.db, self.ai_client, self.logger)
         stats_analyzer = TechStatsAnalyzer(self.db, self.logger)
@@ -353,3 +308,4 @@ class SeekSpider(scrapy.Spider):
         stats_analyzer.process_all_jobs()
 
         self.logger.info("Post-processing complete")
+
