@@ -182,11 +182,8 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
                 process.kill()
                 await process.wait()
 
-        return {
-            "status": "cancelled",
-            "message": "Spider was cancelled by user",
-            "timestamp": datetime.now().isoformat()
-        }
+        # Re-raise the exception so executor marks the task as cancelled
+        raise
 
     except Exception as e:
         logger.error(f"Seek Spider failed: {str(e)}", exc_info=True)

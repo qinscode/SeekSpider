@@ -1,7 +1,8 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { addMilliseconds, isSameDay } from 'date-fns'
 import { useParams } from 'react-router'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import ky from 'ky'
 
 import Breadcrumbs from '@/components/Breadcrumbs'
 import Navbar from '@/components/Navbar'
@@ -22,6 +23,24 @@ const RunViewPage = () => {
   const pipelineId = urlParams.pipelineId as string
   const triggerId = urlParams.triggerId as string
   const runId = parseInt(urlParams.runId as string)
+  const [cancelling, setCancelling] = useState(false)
+
+  // Mutation for cancelling run
+  const cancelRunMutation = useMutation({
+    mutationFn: async () => {
+      setCancelling(true)
+      const response = await ky.post(`/api/runs/${runId}/cancel`).json<{ message: string }>()
+      return response
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: getRun(pipelineId, triggerId, runId).queryKey,
+      })
+    },
+    onSettled: () => {
+      setCancelling(false)
+    },
+  })
 
   useEffect(() => {
     const onRunUpdate = () => {
@@ -90,6 +109,15 @@ const RunViewPage = () => {
             <div className="flex flex-col min-w-0">
               <h1 className="text-2xl font-bold text-white tracking-tight truncate flex items-center gap-3">
                 Run #{runId}
+                {run.status === 'running' && (
+                  <button
+                    onClick={() => cancelRunMutation.mutate()}
+                    disabled={cancelling}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {cancelling ? 'Cancelling...' : 'Cancel Run'}
+                  </button>
+                )}
               </h1>
             </div>
           </div>
