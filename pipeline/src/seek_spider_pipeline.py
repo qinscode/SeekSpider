@@ -359,7 +359,7 @@ class BackfillParams(BaseModel):
     )
     region: Optional[REGIONS] = Field(
         default=None,
-        description="Region for output log organization (does not filter jobs - all regions are processed)"
+        description="Region to process (if None, processes all regions; if specified, only processes that region)"
     )
     include_inactive: bool = Field(
         default=False,
@@ -384,9 +384,8 @@ async def run_backfill(params: BackfillParams) -> dict:
     logger = get_logger()
     logger.info("Starting Backfill Job Descriptions")
     logger.info(f"Parameters: limit={params.limit}, delay={params.delay}")
-    logger.info(f"Region (for output logs): {params.region or 'All regions'}")
+    logger.info(f"Region filter: {params.region or 'All regions'}")
     logger.info(f"Headless mode: {params.headless}, Include inactive: {params.include_inactive}")
-    logger.info("Note: All regions will be processed regardless of region parameter")
 
     # Get current run_id from context
     pipeline_run = run_context.get()
@@ -410,7 +409,9 @@ async def run_backfill(params: BackfillParams) -> dict:
         cmd.extend(['--restart-interval', str(params.restart_interval)])
 
         if params.region:
+            # Use region for both output organization and filtering
             cmd.extend(['--region', params.region])
+            cmd.extend(['--region-filter', params.region])
 
         if params.headless:
             cmd.append('--headless')
@@ -510,41 +511,296 @@ async def run_backfill(params: BackfillParams) -> dict:
 
 register_pipeline(
     id="backfill_job_descriptions",
-    description="Backfill missing job descriptions from Seek job pages (processes all regions)",
+    description="Backfill missing job descriptions from Seek job pages (per region)",
     tasks=[run_backfill],
     params=BackfillParams,
     triggers=[
-        # Daily at 9 AM Perth time
+        # Perth - 9:00 AM & 9:00 PM
         Trigger(
-            id="daily_9am",
-            name="Daily 9 AM Backfill",
-            description="Backfill missing job descriptions at 9:00 AM - processes jobs from all regions",
+            id="perth_9am",
+            name="Perth 9 AM Backfill",
+            description="Backfill missing job descriptions for Perth at 9:00 AM",
             params=BackfillParams(
                 limit=None,
                 delay=5.0,
                 headless=True,
-                region=None,  # Process all regions
+                region="Perth",
                 include_inactive=False,
                 skip_ai=False,
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=0, timezone=PERTH_TZ),
         ),
-        # Daily at 9 PM Perth time
         Trigger(
-            id="daily_9pm",
-            name="Daily 9 PM Backfill",
-            description="Backfill missing job descriptions at 9:00 PM - processes jobs from all regions",
+            id="perth_9pm",
+            name="Perth 9 PM Backfill",
+            description="Backfill missing job descriptions for Perth at 9:00 PM",
             params=BackfillParams(
                 limit=None,
                 delay=5.0,
                 headless=True,
-                region=None,  # Process all regions
+                region="Perth",
                 include_inactive=False,
                 skip_ai=False,
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=0, timezone=PERTH_TZ),
+        ),
+
+        # Sydney - 9:05 AM & 9:05 PM
+        Trigger(
+            id="sydney_9am",
+            name="Sydney 9:05 AM Backfill",
+            description="Backfill missing job descriptions for Sydney at 9:05 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Sydney",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=5, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="sydney_9pm",
+            name="Sydney 9:05 PM Backfill",
+            description="Backfill missing job descriptions for Sydney at 9:05 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Sydney",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=5, timezone=PERTH_TZ),
+        ),
+
+        # Melbourne - 9:10 AM & 9:10 PM
+        Trigger(
+            id="melbourne_9am",
+            name="Melbourne 9:10 AM Backfill",
+            description="Backfill missing job descriptions for Melbourne at 9:10 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Melbourne",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=10, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="melbourne_9pm",
+            name="Melbourne 9:10 PM Backfill",
+            description="Backfill missing job descriptions for Melbourne at 9:10 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Melbourne",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=10, timezone=PERTH_TZ),
+        ),
+
+        # Brisbane - 9:15 AM & 9:15 PM
+        Trigger(
+            id="brisbane_9am",
+            name="Brisbane 9:15 AM Backfill",
+            description="Backfill missing job descriptions for Brisbane at 9:15 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Brisbane",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=15, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="brisbane_9pm",
+            name="Brisbane 9:15 PM Backfill",
+            description="Backfill missing job descriptions for Brisbane at 9:15 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Brisbane",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=15, timezone=PERTH_TZ),
+        ),
+
+        # Gold Coast - 9:20 AM & 9:20 PM
+        Trigger(
+            id="goldcoast_9am",
+            name="Gold Coast 9:20 AM Backfill",
+            description="Backfill missing job descriptions for Gold Coast at 9:20 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Gold Coast",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=20, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="goldcoast_9pm",
+            name="Gold Coast 9:20 PM Backfill",
+            description="Backfill missing job descriptions for Gold Coast at 9:20 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Gold Coast",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=20, timezone=PERTH_TZ),
+        ),
+
+        # Adelaide - 9:25 AM & 9:25 PM
+        Trigger(
+            id="adelaide_9am",
+            name="Adelaide 9:25 AM Backfill",
+            description="Backfill missing job descriptions for Adelaide at 9:25 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Adelaide",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=25, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="adelaide_9pm",
+            name="Adelaide 9:25 PM Backfill",
+            description="Backfill missing job descriptions for Adelaide at 9:25 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Adelaide",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=25, timezone=PERTH_TZ),
+        ),
+
+        # Canberra - 9:30 AM & 9:30 PM
+        Trigger(
+            id="canberra_9am",
+            name="Canberra 9:30 AM Backfill",
+            description="Backfill missing job descriptions for Canberra at 9:30 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Canberra",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=30, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="canberra_9pm",
+            name="Canberra 9:30 PM Backfill",
+            description="Backfill missing job descriptions for Canberra at 9:30 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Canberra",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=30, timezone=PERTH_TZ),
+        ),
+
+        # Hobart - 9:35 AM & 9:35 PM
+        Trigger(
+            id="hobart_9am",
+            name="Hobart 9:35 AM Backfill",
+            description="Backfill missing job descriptions for Hobart at 9:35 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Hobart",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=35, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="hobart_9pm",
+            name="Hobart 9:35 PM Backfill",
+            description="Backfill missing job descriptions for Hobart at 9:35 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Hobart",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=35, timezone=PERTH_TZ),
+        ),
+
+        # Darwin - 9:40 AM & 9:40 PM
+        Trigger(
+            id="darwin_9am",
+            name="Darwin 9:40 AM Backfill",
+            description="Backfill missing job descriptions for Darwin at 9:40 AM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Darwin",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=40, timezone=PERTH_TZ),
+        ),
+        Trigger(
+            id="darwin_9pm",
+            name="Darwin 9:40 PM Backfill",
+            description="Backfill missing job descriptions for Darwin at 9:40 PM",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region="Darwin",
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=40, timezone=PERTH_TZ),
         ),
     ],
 )

@@ -80,13 +80,14 @@ class JobDescriptionBackfiller:
     # Maximum retries for a single job
     MAX_JOB_RETRIES = 2
 
-    def __init__(self, delay: float = 5.0, logger=None, headless: bool = True, use_xvfb: bool = False, include_inactive: bool = False, csv_file: str = None, enable_async_ai: bool = True):
+    def __init__(self, delay: float = 5.0, logger=None, headless: bool = True, use_xvfb: bool = False, include_inactive: bool = False, csv_file: str = None, enable_async_ai: bool = True, region_filter: str = None):
         self.delay = delay
         self.logger = logger or logging.getLogger('backfill')
         self.db = DatabaseManager(config)
         self.headless = headless
         self.use_xvfb = use_xvfb
         self.include_inactive = include_inactive
+        self.region_filter = region_filter  # Filter jobs by region
         self.driver = None
         self.virtual_display = None
         self.driver_restarts = 0
@@ -261,11 +262,13 @@ class JobDescriptionBackfiller:
         """Get jobs where JobDescription is empty"""
         limit_clause = f"LIMIT {limit}" if limit else ""
         active_clause = "" if self.include_inactive else 'AND "IsActive" = \'True\''
+        region_clause = f'AND "Region" = \'{self.region_filter}\'' if self.region_filter else ""
         query = f'''
             SELECT "Id", "Url", "JobTitle"
             FROM "{config.POSTGRESQL_TABLE}"
             WHERE ("JobDescription" IS NULL OR "JobDescription" = '' OR "JobDescription" = 'None')
             {active_clause}
+            {region_clause}
             ORDER BY "CreatedAt" DESC
             {limit_clause}
         '''
@@ -506,8 +509,9 @@ class JobDescriptionBackfiller:
     def run(self, limit: int = None):
         """Run the backfill process"""
         self.logger.info("Starting job description backfill...")
+        region_msg = f"for region: {self.region_filter}" if self.region_filter else "for all regions"
         limit_msg = f"up to {limit}" if limit else "all"
-        self.logger.info(f"Fetching {limit_msg} jobs without descriptions...")
+        self.logger.info(f"Fetching {limit_msg} jobs without descriptions {region_msg}...")
 
         jobs = self.get_jobs_without_description(limit)
         self.stats['total'] = len(jobs)
@@ -702,13 +706,15 @@ def main():
                         help='Include inactive jobs in backfill (default: only active jobs)')
     parser.add_argument('--region', type=str, default=None,
                         help='Region for output organization (e.g., Sydney, Perth)')
+    parser.add_argument('--region-filter', type=str, default=None,
+                        help='Filter jobs by region (e.g., Sydney, Perth). If not specified, processes all regions.')
     parser.add_argument('--restart-interval', type=int, default=30,
                         help='Restart Chrome driver every N jobs (default: 30)')
 
     args = parser.parse_args()
 
     logger, csv_file = setup_logging(region=args.region)
-    logger.info(f"Arguments: limit={args.limit}, delay={args.delay}, headless={args.headless}, xvfb={args.xvfb}, skip_ai={args.skip_ai}, no_async_ai={args.no_async_ai}, include_inactive={args.include_inactive}, region={args.region}, restart_interval={args.restart_interval}")
+    logger.info(f"Arguments: limit={args.limit}, delay={args.delay}, headless={args.headless}, xvfb={args.xvfb}, skip_ai={args.skip_ai}, no_async_ai={args.no_async_ai}, include_inactive={args.include_inactive}, region={args.region}, region_filter={args.region_filter}, restart_interval={args.restart_interval}")
 
     backfiller = JobDescriptionBackfiller(
         delay=args.delay,
@@ -717,7 +723,8 @@ def main():
         use_xvfb=args.xvfb,
         include_inactive=args.include_inactive,
         csv_file=csv_file,
-        enable_async_ai=not args.no_async_ai
+        enable_async_ai=not args.no_async_ai,
+        region_filter=args.region_filter
     )
 
     # Override restart interval if specified
