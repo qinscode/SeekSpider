@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import inspect
 import logging
+import asyncio
 from typing import Any, Callable, Dict, Optional
 from datetime import datetime, timezone
 
@@ -25,6 +26,9 @@ from plombery.pipeline_state import (
 from plombery.schemas import PipelineRunStatus, TaskRun
 
 _logger = logging.getLogger(__name__)
+
+# Global dictionary to track running tasks by run_id
+_running_tasks: Dict[int, asyncio.Task] = {}
 
 
 def utcnow():
@@ -163,78 +167,99 @@ async def run(
 
     pipeline_run.tasks_run = []
 
-    pipeline_token = pipeline_context.set(pipeline)
-    run_token = run_context.set(pipeline_run)
+    # Register the current task for cancellation
+    current_task = asyncio.current_task()
+    if current_task and pipeline_run:
+        _running_tasks[pipeline_run.id] = current_task
+        _logger.info(f"Registered task for run #{pipeline_run.id}")
 
-    logger = get_logger()
+    try:
+        pipeline_token = pipeline_context.set(pipeline)
+        run_token = run_context.set(pipeline_run)
 
-    logger.info(
-        "Executing pipeline `%s` #%d via trigger `%s`",
-        pipeline.id,
-        pipeline_run.id,
-        trigger.id if trigger else MANUAL_TRIGGER_ID,
-    )
+        logger = get_logger()
 
-    pipeline_params: Optional[BaseModel] = None
+        logger.info(
+            "Executing pipeline `%s` #%d via trigger `%s`",
+            pipeline.id,
+            pipeline_run.id,
+            trigger.id if trigger else MANUAL_TRIGGER_ID,
+        )
 
-    if pipeline.params:
-        # Priority: manually passed params > trigger params > default params
-        if params:
-            # Use manually passed parameters
-            pipeline_params = pipeline.params(**params)
-        elif trigger and trigger.params:
-            # Use trigger's default parameters
-            pipeline_params = trigger.params
-        else:
-            # Use pipeline's default parameters
-            pipeline_params = pipeline.params()
-    elif (trigger and trigger.params) or params:
-        logger.warning("This pipeline doesn't support input params")
+        pipeline_params: Optional[BaseModel] = None
 
-    flowing_data = None
+        if pipeline.params:
+            # Priority: manually passed params > trigger params > default params
+            if params:
+                # Use manually passed parameters
+                pipeline_params = pipeline.params(**params)
+            elif trigger and trigger.params:
+                # Use trigger's default parameters
+                pipeline_params = trigger.params
+            else:
+                # Use pipeline's default parameters
+                pipeline_params = pipeline.params()
+        elif (trigger and trigger.params) or params:
+            logger.warning("This pipeline doesn't support input params")
 
-    for task in pipeline.tasks:
-        logger.info("Executing task %s", task.id)
+        flowing_data = None
 
-        task_run = TaskRun(task_id=task.id)
+        for task in pipeline.tasks:
+            logger.info("Executing task %s", task.id)
 
-        task_start_time = utcnow()
+            task_run = TaskRun(task_id=task.id)
 
-        try:
-            flowing_data = await _execute_task(task, flowing_data, pipeline_params)
-            task_run.status = PipelineRunStatus.COMPLETED
-        except Exception as e:
-            logger.error(str(e), exc_info=e)
-            flowing_data = None
-            task_run.status = PipelineRunStatus.FAILED
-        finally:
-            task_run.duration = (utcnow() - task_start_time).total_seconds() * 1000
+            task_start_time = utcnow()
 
             try:
-                task_run.has_output = store_task_output(
-                    pipeline_run.id, task.id, flowing_data
-                )
-            except InvalidDataPath as error:
-                logger.error(
-                    "Can't store the task output as the path is invalid", exc_info=error
-                )
+                flowing_data = await _execute_task(task, flowing_data, pipeline_params)
+                task_run.status = PipelineRunStatus.COMPLETED
+            except Exception as e:
+                logger.error(str(e), exc_info=e)
+                flowing_data = None
+                task_run.status = PipelineRunStatus.FAILED
+            finally:
+                task_run.duration = (utcnow() - task_start_time).total_seconds() * 1000
 
-            pipeline_run.tasks_run.append(task_run)
+                try:
+                    task_run.has_output = store_task_output(
+                        pipeline_run.id, task.id, flowing_data
+                    )
+                except InvalidDataPath as error:
+                    logger.error(
+                        "Can't store the task output as the path is invalid", exc_info=error
+                    )
 
-            if task_run.status == PipelineRunStatus.FAILED:
-                # A task failed so the entire pipeline failed
-                _on_pipeline_status_changed(
-                    pipeline, pipeline_run, PipelineRunStatus.FAILED
-                )
-                break
+                pipeline_run.tasks_run.append(task_run)
 
-    else:
-        # All task succeeded so the entire pipeline succeeded
-        _on_pipeline_status_changed(pipeline, pipeline_run, PipelineRunStatus.COMPLETED)
+                if task_run.status == PipelineRunStatus.FAILED:
+                    # A task failed so the entire pipeline failed
+                    _on_pipeline_status_changed(
+                        pipeline, pipeline_run, PipelineRunStatus.FAILED
+                    )
+                    break
 
-    pipeline_context.reset(pipeline_token)
-    run_context.reset(run_token)
-    close_logger(logger)
+        else:
+            # All task succeeded so the entire pipeline succeeded
+            _on_pipeline_status_changed(pipeline, pipeline_run, PipelineRunStatus.COMPLETED)
+
+        pipeline_context.reset(pipeline_token)
+        run_context.reset(run_token)
+        close_logger(logger)
+
+    except asyncio.CancelledError:
+        _logger.info(f"Pipeline run #{pipeline_run.id} was cancelled")
+        _on_pipeline_status_changed(pipeline, pipeline_run, PipelineRunStatus.CANCELLED)
+        pipeline_context.reset(pipeline_token)
+        run_context.reset(run_token)
+        close_logger(logger)
+        raise
+
+    finally:
+        # Always unregister the task
+        if pipeline_run and pipeline_run.id in _running_tasks:
+            del _running_tasks[pipeline_run.id]
+            _logger.info(f"Unregistered task for run #{pipeline_run.id}")
 
 
 @dataclass
@@ -282,3 +307,20 @@ async def _execute_task(
     result = await task.run(*args, **kwargs)
 
     return result
+
+
+def get_running_task(run_id: int) -> Optional[asyncio.Task]:
+    """Get the running task for a specific run_id"""
+    return _running_tasks.get(run_id)
+
+
+async def cancel_running_task(run_id: int) -> bool:
+    """Cancel a running pipeline task"""
+    task = _running_tasks.get(run_id)
+    if not task:
+        _logger.warning(f"No running task found for run #{run_id}")
+        return False
+
+    _logger.info(f"Cancelling task for run #{run_id}")
+    task.cancel()
+    return True

@@ -17,7 +17,9 @@ class Config:
         self.POSTGRESQL_TABLE = os.getenv('POSTGRESQL_TABLE', 'seek_jobs')
 
         # AI API settings (for post-processing)
-        self.AI_API_KEY = os.getenv('AI_API_KEY')
+        # Support multiple API keys separated by comma
+        ai_keys = os.getenv('AI_API_KEYS') or os.getenv('AI_API_KEY') or ''
+        self.AI_API_KEYS = [k.strip() for k in ai_keys.split(',') if k.strip()]
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_MODEL = os.getenv('AI_MODEL')
 
@@ -42,18 +44,20 @@ class Config:
 
     def validate_ai_config(self):
         """Validate AI configuration for post-processing"""
-        ai_fields = ['AI_API_KEY', 'AI_API_URL', 'AI_MODEL']
         missing_fields = []
-        for field in ai_fields:
-            if not getattr(self, field):
-                missing_fields.append(field)
+        if not self.AI_API_KEYS:
+            missing_fields.append('AI_API_KEYS')
+        if not self.AI_API_URL:
+            missing_fields.append('AI_API_URL')
+        if not self.AI_MODEL:
+            missing_fields.append('AI_MODEL')
 
         if missing_fields:
             raise ValueError(f"Missing AI configuration: {', '.join(missing_fields)}")
 
     def has_ai_config(self):
         """Check if AI configuration is available"""
-        return all([self.AI_API_KEY, self.AI_API_URL, self.AI_MODEL])
+        return bool(self.AI_API_KEYS) and self.AI_API_URL and self.AI_MODEL
 
 
 config = Config()
