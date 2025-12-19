@@ -47,7 +47,7 @@ class AIAnalyzer:
 
         self._app_config = app_config
         self._db = DatabaseManager(app_config)
-        self._ai_client = AIClient(app_config)
+        self._ai_client = AIClient(app_config, self.logger)  # Pass logger
 
         ai_logger = Logger("ai_analysis")
         self._tech_analyzer = TechStackAnalyzer(self._db, self._ai_client, ai_logger)
@@ -147,7 +147,7 @@ class AIAnalyzer:
         conditions = ['"PayRange" IS NOT NULL', '"PayRange" != \'\'']
 
         if self.config.only_missing:
-            conditions.append('("SalaryMin" IS NULL OR "SalaryMin" = 0)')
+            conditions.append('("MinSalary" IS NULL OR "MinSalary" = 0)')
 
         if self.config.region_filter:
             conditions.append(f'"Region" = \'{self.config.region_filter}\'')
@@ -217,6 +217,15 @@ class AIAnalyzer:
             self.logger.info(f"  Normalized: {self.stats['salary_normalized']}")
             self.logger.info(f"  Skipped: {self.stats['salary_skipped']}")
             self.logger.info(f"  Failed: {self.stats['salary_failed']}")
+
+        # Print API key statistics
+        if self._ai_client:
+            key_status = self._ai_client.get_key_status()
+            self.logger.info("API Key Status:")
+            self.logger.info(f"  Total keys: {key_status['total_keys']}")
+            self.logger.info(f"  Available keys: {key_status['available_keys']}")
+            if key_status['exhausted_keys']:
+                self.logger.info(f"  Exhausted keys: {key_status['exhausted_keys']}")
 
         self.logger.info("=" * 50)
 

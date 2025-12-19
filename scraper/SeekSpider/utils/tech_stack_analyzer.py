@@ -95,15 +95,20 @@ class TechStackAnalyzer:
             response = self.ai_client.analyze_text(self.prompt, description)
             if not response:
                 self.logger.warning(f"No response from AI for job {job_id}")
-                return
+                return None
 
             # Parse tech stack from response
             tech_stack = self._clean_api_response(response)
             if not isinstance(tech_stack, list):
                 self.logger.warning(f"Invalid response format for job {job_id}")
-                return
+                return None
 
-            # Update database
+            # Only update database if tech_stack is not empty
+            if not tech_stack or len(tech_stack) == 0:
+                self.logger.info(f"No tech stack found for job {job_id}, skipping database update")
+                return None
+
+            # Update database with valid tech stack
             self.db.update_job(job_id, {
                 "TechStack": json.dumps(tech_stack)
             })

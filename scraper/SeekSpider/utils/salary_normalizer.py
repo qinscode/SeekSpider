@@ -79,10 +79,15 @@ class SalaryNormalizer:
             # Parse salary range
             salary_range = self._parse_salary_range(response)
 
-            # Update database
+            # Only update database if we have valid salary (at least one non-zero value)
+            if salary_range[0] <= 0 and salary_range[1] <= 0:
+                self.logger.info(f"No valid salary found for job {job_id}, skipping database update")
+                return salary_range
+
+            # Update database with valid salary
             self.db.update_job(job_id, {
-                "MinSalary": salary_range[0],
-                "MaxSalary": salary_range[1]
+                "MinSalary": int(salary_range[0]),
+                "MaxSalary": int(salary_range[1])
             })
 
             self.logger.info(
