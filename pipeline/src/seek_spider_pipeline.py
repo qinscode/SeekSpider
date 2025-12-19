@@ -342,7 +342,7 @@ register_pipeline(
 class BackfillParams(BaseModel):
     """Parameters for Backfill Job Descriptions task"""
 
-    limit: int = Field(
+    limit: Optional[int] = Field(
         default=None,
         description="Maximum number of jobs to process (default: no limit)",
         ge=1,

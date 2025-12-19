@@ -189,13 +189,13 @@ class SeekspiderPipeline(object):
             return item
 
         # Handle new job insertion
+        # Note: JobDescription is NOT included - it's maintained by backfill script only
         insert_sql = """
             INSERT INTO "{}" (
                 "Id",
                 "JobTitle",
                 "BusinessName",
                 "WorkType",
-                "JobDescription",
                 "PayRange",
                 "Suburb",
                 "Area",
@@ -209,7 +209,7 @@ class SeekspiderPipeline(object):
                 "PostedDate"
             )
             VALUES (
-                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now(),true,%s
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now(),true,%s
             )
             """.format(config.POSTGRESQL_TABLE)
 
@@ -223,7 +223,6 @@ class SeekspiderPipeline(object):
                 item.get('job_title'),
                 item.get('business_name'),
                 item.get('work_type'),
-                item.get('job_description'),
                 item.get('pay_range'),
                 item.get('suburb'),
                 item.get('area'),

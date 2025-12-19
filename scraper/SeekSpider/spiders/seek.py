@@ -208,11 +208,10 @@ class SeekSpider(scrapy.Spider):
         # Salary info
         item['pay_range'] = data.get('salaryLabel', '')
 
-        # Job description will be fetched from detail page
-        # Don't use teaser - if we can't get full JD, store empty
-        item['job_description'] = ''
+        # JobDescription is NOT scraped by spider - it's handled by backfill script only
+        # This prevents spider from overwriting existing descriptions with empty values
 
-        # Request detail page to get full job description
+        # Request detail page to get additional metadata (suburb, work_type, etc)
         # Allow 403 responses to be processed (Cloudflare blocking)
         return Request(
             url=item['url'],
@@ -260,18 +259,9 @@ class SeekSpider(scrapy.Spider):
             if salary and not item.get('pay_range'):
                 item['pay_range'] = salary.text
 
-            # Extract job description - try multiple selectors
-            job_details = soup.find("div", attrs={"data-automation": "jobAdDetails"})
-            if not job_details:
-                job_details = soup.find("div", attrs={"data-automation": "jobDescription"})
-            if not job_details:
-                # Try finding by class pattern
-                job_details = soup.find("div", class_=lambda x: x and 'jobDescription' in str(x).lower())
-
-            if job_details:
-                item['job_description'] = str(job_details)
-            else:
-                self.logger.warning(f"Could not find job description for {item['job_id']}")
+            # JobDescription extraction is DISABLED
+            # JobDescription is only maintained by the backfill script to prevent overwriting
+            # This ensures we don't accidentally clear existing descriptions with empty values
 
         except Exception as e:
             self.logger.error(f"Error parsing job detail {item['job_id']}: {str(e)}")

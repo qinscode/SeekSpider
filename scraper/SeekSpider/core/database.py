@@ -90,23 +90,47 @@ class DatabaseManager:
     def update_job(self, job_id, job_data):
         """
         Update a job record in the database.
-        
+
         Args:
             job_id: The ID of the job to update
             job_data: Dictionary containing the fields to update
-            
+
+        Returns:
+            Number of rows affected (0 if job already had description, 1 if updated)
+
         Note:
             UpdatedAt field is automatically set to current timestamp,
             do not include it in job_data.
+            When updating JobDescription, only updates if current value is empty
+            (prevents race conditions in concurrent execution).
         """
         set_clause = ', '.join([f'"{k}" = %s' for k in job_data.keys()])
-        query = f'''
-            UPDATE "{self.config.POSTGRESQL_TABLE}"
-            SET {set_clause}, "UpdatedAt" = now()
-            WHERE "Id" = %s
-        '''
+
+        # Check if we're updating JobDescription
+        if 'JobDescription' in job_data:
+            # Add condition to only update if JobDescription is currently empty
+            # This is an atomic check-and-set operation at the database level
+            query = f'''
+                UPDATE "{self.config.POSTGRESQL_TABLE}"
+                SET {set_clause}, "UpdatedAt" = now()
+                WHERE "Id" = %s
+                AND ("JobDescription" IS NULL OR "JobDescription" = '' OR "JobDescription" = 'None')
+            '''
+        else:
+            # For other updates, no special condition needed
+            query = f'''
+                UPDATE "{self.config.POSTGRESQL_TABLE}"
+                SET {set_clause}, "UpdatedAt" = now()
+                WHERE "Id" = %s
+            '''
+
         affected = self.execute_update(query, list(job_data.values()) + [job_id])
-        self.log('info', f'Updated job {job_id}, affected rows: {affected}')
+
+        if 'JobDescription' in job_data and affected == 0:
+            self.log('debug', f'Job {job_id} already has description, skipped update (race condition avoided)')
+        else:
+            self.log('info', f'Updated job {job_id}, affected rows: {affected}')
+
         return affected
 
     def mark_jobs_inactive(self, job_ids):
