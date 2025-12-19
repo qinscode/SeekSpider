@@ -354,8 +354,14 @@ class BackfillParams(BaseModel):
         description="Base delay between requests in seconds"
     )
     headless: bool = Field(
-        default=True,
-        description="Run browser in headless mode"
+        default=False,
+        description="Run browser in headless mode (default: False for better success rate)"
+    )
+    workers: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Number of concurrent workers (1-5, default: 3)"
     )
     region: Optional[REGIONS] = Field(
         default=None,
@@ -373,7 +379,7 @@ class BackfillParams(BaseModel):
         default=30,
         ge=5,
         le=100,
-        description="Restart Chrome driver every N jobs"
+        description="Restart Chrome driver every N jobs (only for serial mode)"
     )
 
 
@@ -383,7 +389,7 @@ async def run_backfill(params: BackfillParams) -> dict:
 
     logger = get_logger()
     logger.info("Starting Backfill Job Descriptions")
-    logger.info(f"Parameters: limit={params.limit}, delay={params.delay}")
+    logger.info(f"Parameters: limit={params.limit}, delay={params.delay}, workers={params.workers}")
     logger.info(f"Region filter: {params.region or 'All regions'}")
     logger.info(f"Headless mode: {params.headless}, Include inactive: {params.include_inactive}")
 
@@ -397,15 +403,15 @@ async def run_backfill(params: BackfillParams) -> dict:
         env = os.environ.copy()
         env['PYTHONPATH'] = f"{PROJECT_ROOT}:{SCRAPER_DIR}:{env.get('PYTHONPATH', '')}"
 
-        # Build backfill command
-        backfill_script = os.path.join(SCRAPER_DIR, 'SeekSpider', 'scripts', 'backfill_job_descriptions.py')
-
-        cmd = [sys.executable, backfill_script]
+        # Build backfill command using module
+        backfill_cwd = os.path.join(SCRAPER_DIR, 'SeekSpider')
+        cmd = [sys.executable, '-m', 'backfill']
 
         if params.limit:
             cmd.extend(['--limit', str(params.limit)])
 
         cmd.extend(['--delay', str(params.delay)])
+        cmd.extend(['--workers', str(params.workers)])
         cmd.extend(['--restart-interval', str(params.restart_interval)])
 
         if params.region:
@@ -423,12 +429,12 @@ async def run_backfill(params: BackfillParams) -> dict:
             cmd.append('--skip-ai')
 
         logger.info(f"Running command: {' '.join(cmd)}")
-        logger.info(f"Working directory: {SCRAPER_DIR}")
+        logger.info(f"Working directory: {backfill_cwd}")
 
-        # Run the backfill script using async subprocess
+        # Run the backfill module using async subprocess
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=SCRAPER_DIR,
+            cwd=backfill_cwd,
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
@@ -801,6 +807,204 @@ register_pipeline(
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=40, timezone=PERTH_TZ),
+        ),
+    ],
+)
+
+
+# ============================================================================
+# AI Analysis Pipeline
+# ============================================================================
+
+ANALYSIS_TYPES = Literal["all", "tech_stack", "salary"]
+
+
+class AIAnalysisParams(BaseModel):
+    """Parameters for AI Analysis task"""
+
+    analysis_type: ANALYSIS_TYPES = Field(
+        default="all",
+        description="Type of analysis to run (all, tech_stack, salary)"
+    )
+    region: Optional[REGIONS] = Field(
+        default=None,
+        description="Region for output organization"
+    )
+    region_filter: Optional[REGIONS] = Field(
+        default=None,
+        description="Filter jobs by region"
+    )
+    limit: Optional[int] = Field(
+        default=None,
+        description="Maximum number of jobs to process (default: no limit)",
+        ge=1,
+    )
+    include_existing: bool = Field(
+        default=False,
+        description="Re-analyze jobs that already have analysis"
+    )
+
+
+@task
+async def run_ai_analysis(params: AIAnalysisParams) -> dict:
+    """Run AI analysis on job descriptions"""
+
+    logger = get_logger()
+    logger.info("Starting AI Analysis")
+    logger.info(f"Parameters: type={params.analysis_type}, region={params.region}")
+    logger.info(f"Region filter: {params.region_filter or 'All regions'}")
+    logger.info(f"Limit: {params.limit or 'No limit'}, Include existing: {params.include_existing}")
+
+    # Get current run_id from context
+    pipeline_run = run_context.get()
+    run_id = pipeline_run.id if pipeline_run else None
+
+    process = None
+    try:
+        # Set up environment
+        env = os.environ.copy()
+        env['PYTHONPATH'] = f"{PROJECT_ROOT}:{SCRAPER_DIR}:{env.get('PYTHONPATH', '')}"
+
+        # Build ai_analysis command using module
+        ai_analysis_cwd = os.path.join(SCRAPER_DIR, 'SeekSpider')
+        cmd = [sys.executable, '-m', 'ai_analysis']
+
+        cmd.extend(['--type', params.analysis_type])
+
+        if params.region:
+            cmd.extend(['--region', params.region])
+
+        if params.region_filter:
+            cmd.extend(['--region-filter', params.region_filter])
+
+        if params.limit:
+            cmd.extend(['--limit', str(params.limit)])
+
+        if params.include_existing:
+            cmd.append('--include-existing')
+
+        logger.info(f"Running command: {' '.join(cmd)}")
+        logger.info(f"Working directory: {ai_analysis_cwd}")
+
+        # Run the ai_analysis module using async subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=ai_analysis_cwd,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        # Register the process if we have a run_id
+        if run_id:
+            _running_processes[run_id] = process
+            logger.info(f"Registered process for run #{run_id} (PID: {process.pid})")
+
+        # Stream output to logger asynchronously
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            line = line.decode('utf-8').strip()
+            if line:
+                logger.info(line)
+
+        # Wait for process to complete
+        return_code = await process.wait()
+
+        if return_code != 0:
+            # Check if it was cancelled
+            if return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
+                logger.info(f"AI Analysis was cancelled (return code: {return_code})")
+                return {
+                    "status": "cancelled",
+                    "message": "AI Analysis was cancelled by user",
+                    "timestamp": datetime.now().isoformat()
+                }
+
+            return {
+                "status": "error",
+                "error": f"AI Analysis exited with code {return_code}",
+                "timestamp": datetime.now().isoformat()
+            }
+
+        result = {
+            "status": "success",
+            "message": "AI Analysis completed successfully",
+            "analysis_type": params.analysis_type,
+            "region": params.region or "All regions",
+            "region_filter": params.region_filter or "All regions",
+            "limit": params.limit,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        logger.info("AI Analysis completed successfully")
+        return result
+
+    except asyncio.CancelledError:
+        # Task was cancelled
+        logger.info("Task was cancelled")
+        if process and process.returncode is None:
+            logger.info(f"Terminating process PID: {process.pid}")
+            try:
+                process.terminate()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"Process did not terminate gracefully, killing PID: {process.pid}")
+                process.kill()
+                await process.wait()
+
+        # Re-raise the exception so executor marks the task as cancelled
+        raise
+
+    except Exception as e:
+        logger.error(f"AI Analysis failed: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    finally:
+        # Always unregister the process
+        if run_id and run_id in _running_processes:
+            del _running_processes[run_id]
+            logger.info(f"Unregistered process for run #{run_id}")
+
+
+register_pipeline(
+    id="ai_analysis",
+    description="Run AI analysis on job descriptions (tech stack extraction, salary normalization)",
+    tasks=[run_ai_analysis],
+    params=AIAnalysisParams,
+    triggers=[
+        # Daily at 10:00 AM - analyze all regions
+        Trigger(
+            id="daily_10am",
+            name="Daily 10 AM AI Analysis",
+            description="Run AI analysis on all jobs at 10:00 AM",
+            params=AIAnalysisParams(
+                analysis_type="all",
+                region=None,
+                region_filter=None,
+                limit=None,
+                include_existing=False,
+            ),
+            schedule=CronTrigger(hour=10, minute=0, timezone=PERTH_TZ),
+        ),
+        # Daily at 10:00 PM - analyze all regions
+        Trigger(
+            id="daily_10pm",
+            name="Daily 10 PM AI Analysis",
+            description="Run AI analysis on all jobs at 10:00 PM",
+            params=AIAnalysisParams(
+                analysis_type="all",
+                region=None,
+                region_filter=None,
+                limit=None,
+                include_existing=False,
+            ),
+            schedule=CronTrigger(hour=22, minute=0, timezone=PERTH_TZ),
         ),
     ],
 )
