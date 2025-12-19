@@ -4,10 +4,11 @@ Seek Job Spider Pipeline
 Scrapes job listings from Seek.com.au for IT positions.
 """
 
-import subprocess
+import asyncio
 import sys
 import os
-from typing import Literal
+import signal
+from typing import Literal, Dict
 from pydantic import BaseModel, Field
 from datetime import datetime
 from dateutil import tz
@@ -15,6 +16,15 @@ from dateutil import tz
 import psycopg2
 from apscheduler.triggers.cron import CronTrigger
 from plombery import register_pipeline, task, Trigger, get_logger
+from plombery.pipeline.context import run_context
+
+# Global dictionary to track running processes by run_id
+_running_processes: Dict[int, asyncio.subprocess.Process] = {}
+
+
+def get_running_process(run_id: int):
+    """Get the running process for a specific run_id"""
+    return _running_processes.get(run_id)
 
 # Get project directories
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -81,6 +91,11 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
     logger.info(f"Parameters: region={params.region}, classification={params.classification}")
     logger.info(f"Post-processing enabled: {params.run_post_processing}")
 
+    # Get current run_id from context
+    pipeline_run = run_context.get()
+    run_id = pipeline_run.id if pipeline_run else None
+
+    process = None
     try:
         # Set up environment
         env = os.environ.copy()
@@ -100,27 +115,42 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
         logger.info(f"Running command: {' '.join(cmd)}")
         logger.info(f"Working directory: {SCRAPER_DIR}")
 
-        # Run the spider
-        process = subprocess.Popen(
-            cmd,
+        # Run the spider using async subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
             cwd=SCRAPER_DIR,
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
 
-        # Stream output to logger
-        for line in process.stdout:
-            line = line.strip()
+        # Register the process if we have a run_id
+        if run_id:
+            _running_processes[run_id] = process
+            logger.info(f"Registered process for run #{run_id} (PID: {process.pid})")
+
+        # Stream output to logger asynchronously
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            line = line.decode('utf-8').strip()
             if line:
                 logger.info(line)
 
         # Wait for process to complete
-        return_code = process.wait()
+        return_code = await process.wait()
 
         if return_code != 0:
+            # Check if it was cancelled
+            if return_code == -signal.SIGTERM or return_code == -signal.SIGKILL:
+                logger.info(f"Spider was cancelled (return code: {return_code})")
+                return {
+                    "status": "cancelled",
+                    "message": "Spider was cancelled by user",
+                    "timestamp": datetime.now().isoformat()
+                }
+
             return {
                 "status": "error",
                 "error": f"Spider exited with code {return_code}",
@@ -139,6 +169,25 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
         logger.info("Seek Spider completed successfully")
         return result
 
+    except asyncio.CancelledError:
+        # Task was cancelled
+        logger.info("Task was cancelled")
+        if process and process.returncode is None:
+            logger.info(f"Terminating process PID: {process.pid}")
+            try:
+                process.terminate()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"Process did not terminate gracefully, killing PID: {process.pid}")
+                process.kill()
+                await process.wait()
+
+        return {
+            "status": "cancelled",
+            "message": "Spider was cancelled by user",
+            "timestamp": datetime.now().isoformat()
+        }
+
     except Exception as e:
         logger.error(f"Seek Spider failed: {str(e)}", exc_info=True)
         return {
@@ -146,6 +195,12 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+    finally:
+        # Always unregister the process
+        if run_id and run_id in _running_processes:
+            del _running_processes[run_id]
+            logger.info(f"Unregistered process for run #{run_id}")
 
 
 # Perth timezone for all Australian regions
@@ -181,52 +236,31 @@ register_pipeline(
             schedule=CronTrigger(hour=18, minute=0, timezone=PERTH_TZ),
         ),
 
-        # Sydney - Daily 6 AM & 6 PM
+        # Sydney - Daily 12 PM
         Trigger(
-            id="sydney_daily_6am",
-            name="Sydney Daily 6 AM",
-            description="Scrape Sydney IT jobs at 6:00 AM",
+            id="sydney_daily_12pm",
+            name="Sydney Daily 12 PM",
+            description="Scrape Sydney IT jobs at 12:00 AM",
             params=SeekSpiderParams(
                 region="Sydney",
                 classification="6281",
                 run_post_processing=True,
             ),
-            schedule=CronTrigger(hour=6, minute=15, timezone=PERTH_TZ),
-        ),
-        Trigger(
-            id="sydney_daily_6pm",
-            name="Sydney Daily 6 PM",
-            description="Scrape Sydney IT jobs at 6:00 PM",
-            params=SeekSpiderParams(
-                region="Sydney",
-                classification="6281",
-                run_post_processing=True,
-            ),
-            schedule=CronTrigger(hour=18, minute=15, timezone=PERTH_TZ),
+            schedule=CronTrigger(hour=12, minute=00, timezone=PERTH_TZ),
         ),
 
-        # Melbourne - Daily 6 AM & 6 PM
+
+        # Melbourne - Daily 12 PM
         Trigger(
-            id="melbourne_daily_6am",
-            name="Melbourne Daily 6 AM",
-            description="Scrape Melbourne IT jobs at 6:00 AM",
+            id="melbourne_daily_12pm",
+            name="Melbourne Daily 12 PM",
+            description="Scrape Melbourne IT jobs at 12:00 PM",
             params=SeekSpiderParams(
                 region="Melbourne",
                 classification="6281",
                 run_post_processing=True,
             ),
-            schedule=CronTrigger(hour=6, minute=30, timezone=PERTH_TZ),
-        ),
-        Trigger(
-            id="melbourne_daily_6pm",
-            name="Melbourne Daily 6 PM",
-            description="Scrape Melbourne IT jobs at 6:00 PM",
-            params=SeekSpiderParams(
-                region="Melbourne",
-                classification="6281",
-                run_post_processing=True,
-            ),
-            schedule=CronTrigger(hour=18, minute=30, timezone=PERTH_TZ),
+            schedule=CronTrigger(hour=12, minute=30, timezone=PERTH_TZ),
         ),
 
         # Brisbane - Daily 6 AM & 6 PM
@@ -323,71 +357,76 @@ async def reset_is_new(params: ResetIsNewParams) -> dict:
     logger = get_logger()
     logger.info("Starting daily IsNew reset task")
 
-    try:
-        # Get database configuration from environment
-        db_config = {
-            'host': os.getenv('POSTGRESQL_HOST'),
-            'port': int(os.getenv('POSTGRESQL_PORT', 5432)),
-            'user': os.getenv('POSTGRESQL_USER'),
-            'password': os.getenv('POSTGRESQL_PASSWORD'),
-            'database': os.getenv('POSTGRESQL_DATABASE'),
-        }
-        table_name = os.getenv('POSTGRESQL_TABLE', 'seek_jobs')
+    def _reset_is_new_sync():
+        """Synchronous database operation to be run in thread pool"""
+        try:
+            # Get database configuration from environment
+            db_config = {
+                'host': os.getenv('POSTGRESQL_HOST'),
+                'port': int(os.getenv('POSTGRESQL_PORT', 5432)),
+                'user': os.getenv('POSTGRESQL_USER'),
+                'password': os.getenv('POSTGRESQL_PASSWORD'),
+                'database': os.getenv('POSTGRESQL_DATABASE'),
+            }
+            table_name = os.getenv('POSTGRESQL_TABLE', 'seek_jobs')
 
-        # Validate config
-        missing = [k for k, v in db_config.items() if not v and k != 'port']
-        if missing:
-            raise ValueError(f"Missing database config: {missing}")
+            # Validate config
+            missing = [k for k, v in db_config.items() if not v and k != 'port']
+            if missing:
+                raise ValueError(f"Missing database config: {missing}")
 
-        # Connect to database
-        conn = psycopg2.connect(**db_config)
-        cursor = conn.cursor()
+            # Connect to database
+            conn = psycopg2.connect(**db_config)
+            cursor = conn.cursor()
 
-        # Set timezone to Perth for all timestamp operations
-        cursor.execute("SET timezone = 'Australia/Perth'")
+            # Set timezone to Perth for all timestamp operations
+            cursor.execute("SET timezone = 'Australia/Perth'")
 
-        # First, count how many records have IsNew = True
-        cursor.execute(f'SELECT COUNT(*) FROM "{table_name}" WHERE "IsNew" = TRUE')
-        count_before = cursor.fetchone()[0]
-        logger.info(f"Found {count_before} jobs with IsNew=True")
+            # First, count how many records have IsNew = True
+            cursor.execute(f'SELECT COUNT(*) FROM "{table_name}" WHERE "IsNew" = TRUE')
+            count_before = cursor.fetchone()[0]
+            logger.info(f"Found {count_before} jobs with IsNew=True")
 
-        if params.dry_run:
-            logger.info("DRY RUN: Would reset IsNew to False for all jobs")
+            if params.dry_run:
+                logger.info("DRY RUN: Would reset IsNew to False for all jobs")
+                cursor.close()
+                conn.close()
+                return {
+                    "status": "dry_run",
+                    "jobs_would_be_reset": count_before,
+                    "timestamp": datetime.now().isoformat()
+                }
+
+            # Reset IsNew to False for all jobs
+            cursor.execute(f'''
+                UPDATE "{table_name}"
+                SET "IsNew" = FALSE, "UpdatedAt" = now()
+                WHERE "IsNew" = TRUE
+            ''')
+            affected_rows = cursor.rowcount
+            conn.commit()
+
+            logger.info(f"Reset {affected_rows} jobs to IsNew=False")
+
             cursor.close()
             conn.close()
+
             return {
-                "status": "dry_run",
-                "jobs_would_be_reset": count_before,
+                "status": "success",
+                "jobs_reset": affected_rows,
                 "timestamp": datetime.now().isoformat()
             }
 
-        # Reset IsNew to False for all jobs
-        cursor.execute(f'''
-            UPDATE "{table_name}"
-            SET "IsNew" = FALSE, "UpdatedAt" = now()
-            WHERE "IsNew" = TRUE
-        ''')
-        affected_rows = cursor.rowcount
-        conn.commit()
+        except Exception as e:
+            logger.error(f"Reset IsNew failed: {str(e)}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
 
-        logger.info(f"Reset {affected_rows} jobs to IsNew=False")
-
-        cursor.close()
-        conn.close()
-
-        return {
-            "status": "success",
-            "jobs_reset": affected_rows,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    except Exception as e:
-        logger.error(f"Reset IsNew failed: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
+    # Run the synchronous database operation in a thread pool to avoid blocking
+    return await asyncio.to_thread(_reset_is_new_sync)
 
 
 register_pipeline(

@@ -12,6 +12,7 @@ from plombery.exceptions import InvalidDataPath
 from plombery.orchestrator.data_storage import get_task_run_data_file, read_logs_file
 from plombery.database.repository import list_pipeline_runs, get_pipeline_run
 from plombery.config import settings
+from plombery.orchestrator import cancel_pipeline_run
 
 
 class JSONLResponse(Response):
@@ -39,6 +40,22 @@ def get_run(run_id: int) -> PipelineRun:
         raise HTTPException(404, f"The pipeline run {run_id} doesn't exist")
 
     return pipeline_run
+
+
+@router.post("/{run_id}/cancel")
+async def cancel_run(run_id: int) -> dict:
+    """Cancel a running pipeline"""
+    if not (pipeline_run := get_pipeline_run(run_id)):
+        raise HTTPException(404, f"The pipeline run {run_id} doesn't exist")
+
+    if pipeline_run.status != "running":
+        raise HTTPException(400, f"Pipeline run {run_id} is not running (status: {pipeline_run.status})")
+
+    try:
+        await cancel_pipeline_run(run_id)
+        return {"message": f"Pipeline run {run_id} has been cancelled", "run_id": run_id}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to cancel pipeline run: {str(e)}")
 
 
 @router.get("/{run_id}/logs", response_class=JSONLResponse)

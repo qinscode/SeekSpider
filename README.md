@@ -85,7 +85,8 @@ POSTGRESQL_DATABASE=your_database
 POSTGRESQL_TABLE=seek_jobs
 
 # AI API configuration (for post-processing)
-AI_API_KEY=your_api_key
+# Multiple keys supported (comma-separated) - auto-switches on rate limit or insufficient balance
+AI_API_KEYS=key1,key2,key3
 AI_API_URL=https://api.siliconflow.cn/v1/chat/completions
 AI_MODEL=deepseek-ai/DeepSeek-V2.5
 ```

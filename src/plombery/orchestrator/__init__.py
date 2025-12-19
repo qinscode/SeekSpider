@@ -1,5 +1,8 @@
 from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timedelta
+import asyncio
+import importlib
+import sys
 
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.job import Job
@@ -10,13 +13,16 @@ from plombery.constants import MANUAL_TRIGGER_ID
 from plombery.database.models import PipelineRun
 from plombery.database.repository import create_pipeline_run
 from plombery.database.schemas import PipelineRunCreate
-from plombery.orchestrator.executor import Pipeline, run, Trigger, utcnow
+from plombery.orchestrator.executor import Pipeline, run, Trigger, utcnow, cancel_running_task
 from plombery.pipeline._utils import get_job_id
 from plombery.pipeline_state import (
     ensure_pipelines_enabled,
     pipeline_schedule_is_enabled,
 )
 from plombery.schemas import PipelineRunStatus
+
+# Global dictionary to track running tasks by run_id
+_running_tasks: Dict[int, asyncio.Task] = {}
 
 
 class _Orchestrator:
@@ -166,3 +172,12 @@ async def run_pipeline_now(
     )
 
     return pipeline_run
+
+
+async def cancel_pipeline_run(run_id: int) -> bool:
+    """
+    Cancel a running pipeline by run_id.
+
+    Returns True if the cancellation was successful, False otherwise.
+    """
+    return await cancel_running_task(run_id)
