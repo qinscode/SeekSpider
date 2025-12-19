@@ -103,7 +103,9 @@ class JobDescriptionBackfiller:
         self.ai_queue: queue.Queue = queue.Queue()
         self.ai_thread: Optional[threading.Thread] = None
         self.ai_stop_event = threading.Event()
-        self.ai_analyzer = None
+        self.ai_db = None
+        self.tech_analyzer = None
+        self.salary_normalizer = None
 
         self.stats = {
             'total': 0,
@@ -113,6 +115,9 @@ class JobDescriptionBackfiller:
             'driver_restarts': 0,
             'ai_analyzed': 0,
             'ai_failed': 0,
+            'salary_normalized': 0,
+            'salary_skipped': 0,
+            'salary_failed': 0,
         }
 
     def _init_driver(self):
@@ -317,18 +322,21 @@ class JobDescriptionBackfiller:
             from core.ai_client import AIClient
             from core.logger import Logger
             from utils.tech_stack_analyzer import TechStackAnalyzer
+            from utils.salary_normalizer import SalaryNormalizer
 
             # Create a separate database connection for AI thread
             ai_db = DatabaseManager(config)
             ai_client = AIClient(config)
             ai_logger = Logger("async_ai")
 
-            self.ai_analyzer = TechStackAnalyzer(ai_db, ai_client, ai_logger)
+            self.ai_db = ai_db
+            self.tech_analyzer = TechStackAnalyzer(ai_db, ai_client, ai_logger)
+            self.salary_normalizer = SalaryNormalizer(ai_db, ai_client, ai_logger)
 
             # Start AI worker thread
             self.ai_thread = threading.Thread(target=self._ai_worker, daemon=True)
             self.ai_thread.start()
-            self.logger.info("Async AI analysis thread started")
+            self.logger.info("Async AI analysis thread started (TechStack + Salary)")
         except Exception as e:
             self.logger.warning(f"Failed to initialize async AI: {e}")
             self.enable_async_ai = False
@@ -348,17 +356,36 @@ class JobDescriptionBackfiller:
                 if job_id is None:  # Sentinel value to stop
                     break
 
-                # Perform AI analysis
+                # Perform Tech Stack analysis
                 try:
-                    result = self.ai_analyzer.analyze_job(job_id, description)
-                    if result:
+                    tech_result = self.tech_analyzer.analyze_job(job_id, description)
+                    if tech_result:
                         self.stats['ai_analyzed'] += 1
-                        self.logger.info(f"  [AI] Analyzed job {job_id}: {result}")
+                        self.logger.info(f"  [AI-Tech] Analyzed job {job_id}: {tech_result}")
                     else:
                         self.stats['ai_failed'] += 1
                 except Exception as e:
                     self.stats['ai_failed'] += 1
-                    self.logger.warning(f"  [AI] Failed to analyze job {job_id}: {e}")
+                    self.logger.warning(f"  [AI-Tech] Failed to analyze job {job_id}: {e}")
+
+                # Perform Salary normalization
+                try:
+                    # Get pay_range from database
+                    query = f'SELECT "PayRange" FROM "{config.POSTGRESQL_TABLE}" WHERE "Id" = %s'
+                    result = self.ai_db.execute_query(query, (job_id,))
+                    if result and result[0][0]:
+                        pay_range = result[0][0]
+                        salary_result = self.salary_normalizer.normalize_salary(job_id, pay_range)
+                        if salary_result and (salary_result[0] > 0 or salary_result[1] > 0):
+                            self.stats['salary_normalized'] += 1
+                            self.logger.info(f"  [AI-Salary] Normalized job {job_id}: {salary_result}")
+                        else:
+                            self.stats['salary_skipped'] += 1
+                    else:
+                        self.stats['salary_skipped'] += 1
+                except Exception as e:
+                    self.stats['salary_failed'] += 1
+                    self.logger.warning(f"  [AI-Salary] Failed to normalize job {job_id}: {e}")
 
                 self.ai_queue.task_done()
 
@@ -609,8 +636,11 @@ class JobDescriptionBackfiller:
         if self.enable_async_ai:
             self.logger.info("-" * 50)
             self.logger.info("AI ANALYSIS (async)")
-            self.logger.info(f"Jobs analyzed: {self.stats['ai_analyzed']}")
-            self.logger.info(f"AI failures: {self.stats['ai_failed']}")
+            self.logger.info(f"Tech stack analyzed: {self.stats['ai_analyzed']}")
+            self.logger.info(f"Tech stack failures: {self.stats['ai_failed']}")
+            self.logger.info(f"Salary normalized: {self.stats['salary_normalized']}")
+            self.logger.info(f"Salary skipped (no pay range): {self.stats['salary_skipped']}")
+            self.logger.info(f"Salary failures: {self.stats['salary_failed']}")
         self.logger.info("=" * 50)
 
 
