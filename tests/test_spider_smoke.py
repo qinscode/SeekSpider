@@ -8,6 +8,9 @@ This test performs actual requests to Seek.com.au (limited scope).
 Usage:
     python tests/test_spider_smoke.py
     python tests/test_spider_smoke.py --region Perth --limit 5
+    python tests/test_spider_smoke.py --spider-only
+    python tests/test_spider_smoke.py --backfill-only
+    python tests/test_spider_smoke.py --ai-only
 """
 
 import os
@@ -25,7 +28,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 
-def run_spider_test(region: str = 'Perth', limit: int = 5, dry_run: bool = False):
+def run_spider_test(region: str = 'Perth', limit: int = 5, dry_run: bool = False) -> int:
     """
     Run a quick spider test
 
@@ -33,6 +36,9 @@ def run_spider_test(region: str = 'Perth', limit: int = 5, dry_run: bool = False
         region: Region to scrape
         limit: Maximum number of jobs to scrape
         dry_run: If True, just check spider can start
+
+    Returns:
+        Exit code (0 for success, non-zero for failure)
     """
     print("=" * 70)
     print("SPIDER SMOKE TEST")
@@ -94,13 +100,16 @@ def run_spider_test(region: str = 'Perth', limit: int = 5, dry_run: bool = False
         return 1
 
 
-def run_backfill_test(region: str = 'Perth', limit: int = 3):
+def run_backfill_test(region: str = 'Perth', limit: int = 3) -> int:
     """
     Run a quick backfill test
 
     Args:
         region: Region to backfill
         limit: Maximum number of jobs to backfill
+
+    Returns:
+        Exit code (0 for success, non-zero for failure)
     """
     print("\n" + "=" * 70)
     print("BACKFILL SMOKE TEST")
@@ -158,13 +167,16 @@ def run_backfill_test(region: str = 'Perth', limit: int = 3):
         return 1
 
 
-def run_ai_analysis_test(region: str = 'Perth', limit: int = 5):
+def run_ai_analysis_test(region: str = 'Perth', limit: int = 5) -> int:
     """
     Run a quick AI analysis test
 
     Args:
         region: Region to analyze
         limit: Maximum number of jobs to analyze
+
+    Returns:
+        Exit code (0 for success, non-zero for failure)
     """
     print("\n" + "=" * 70)
     print("AI ANALYSIS SMOKE TEST")

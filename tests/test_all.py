@@ -10,7 +10,7 @@ This test suite covers:
 5. Backfill module
 6. AI analysis module
 7. Pipeline definitions
-8. CLI entry points
+8. Utility modules
 
 Usage:
     # Run all tests
@@ -32,7 +32,7 @@ Usage:
 import os
 import sys
 import subprocess
-from typing import List, Dict, Any
+from typing import List, Tuple
 from datetime import datetime
 
 # Setup paths
@@ -58,9 +58,9 @@ class TestResults:
     """Track test results for summary report"""
 
     def __init__(self):
-        self.passed = []
-        self.failed = []
-        self.skipped = []
+        self.passed: List[Tuple[str, str]] = []
+        self.failed: List[Tuple[str, str]] = []
+        self.skipped: List[Tuple[str, str]] = []
 
     def add_pass(self, name: str, message: str = ""):
         self.passed.append((name, message))
@@ -403,7 +403,7 @@ def test_database_connection():
                 assert result[0] == 1
 
         results.add_pass("database_connection")
-        print("  Database connection")
+        print("  Database connection successful")
     except Exception as e:
         results.add_fail("database_connection", str(e))
         print(f"  Database connection FAILED: {e}")
@@ -524,7 +524,7 @@ def test_spider_initialization():
     print("\n[TEST] Testing spider initialization...")
 
     try:
-        # Just import the spider class
+        # Import the spider class
         from SeekSpider.spiders.seek import SeekSpider
 
         # Check spider attributes
@@ -604,7 +604,7 @@ def test_backfill_driver_manager():
         assert manager is not None
 
         results.add_pass("backfill_driver_manager")
-        print("  DriverManager instantiation")
+        print("  DriverManager instantiation successful")
     except Exception as e:
         results.add_fail("backfill_driver_manager", str(e))
         print(f"  DriverManager FAILED: {e}")
@@ -819,7 +819,7 @@ def test_tech_stack_analyzer():
     try:
         from SeekSpider.utils.tech_stack_analyzer import TechStackAnalyzer
 
-        # Just verify the class can be imported
+        # Verify the class can be imported
         assert TechStackAnalyzer is not None
 
         results.add_pass("tech_stack_analyzer")
@@ -836,7 +836,7 @@ def test_salary_normalizer():
     try:
         from SeekSpider.utils.salary_normalizer import SalaryNormalizer
 
-        # Just verify the class can be imported
+        # Verify the class can be imported
         assert SalaryNormalizer is not None
 
         results.add_pass("salary_normalizer")

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-AI API Keys 可用性测试脚本
-测试 SiliconFlow API keys 是否有效，并查看账户信息
+AI API Keys Availability Test Script
+
+Tests SiliconFlow API keys for validity and shows account information.
+
+Usage:
+    python tests/test_ai_keys.py
 """
 
 import os
@@ -10,21 +14,21 @@ import requests
 from dotenv import load_dotenv
 from datetime import datetime
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
-# 配置
+# Configuration
 API_URL = os.getenv("AI_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
 USER_INFO_URL = "https://api.siliconflow.cn/v1/user/info"
 AI_MODEL = os.getenv("AI_MODEL", "deepseek-ai/DeepSeek-V2.5")
 API_KEYS_STR = os.getenv("AI_API_KEY", "")
 
-# 测试消息
+# Test message
 TEST_MESSAGE = "Hello, please respond with 'OK' only."
 
 
 def get_user_info(api_key: str) -> dict:
-    """获取账户信息"""
+    """Get account information"""
     headers = {
         "Authorization": f"Bearer {api_key}",
     }
@@ -40,7 +44,7 @@ def get_user_info(api_key: str) -> dict:
 
 
 def test_single_key(api_key: str, key_index: int) -> dict:
-    """测试单个API key的可用性"""
+    """Test a single API key for availability"""
     result = {
         "key_index": key_index,
         "key_preview": f"{api_key[:10]}...{api_key[-4:]}",
@@ -106,82 +110,82 @@ def test_single_key(api_key: str, key_index: int) -> dict:
         result["status"] = "error"
         result["error"] = str(e)[:100]
 
-    # 获取账户信息（无论API调用是否成功都尝试获取）
+    # Get account info (attempt regardless of API call success)
     result["user_info"] = get_user_info(api_key)
 
     return result
 
 
 def print_result(result: dict):
-    """打印测试结果"""
+    """Print test result"""
     status_icons = {
-        "valid": "✅",
-        "invalid": "❌",
-        "forbidden": "🚫",
-        "rate_limited": "⏳",
-        "timeout": "⏱️",
-        "connection_error": "🔌",
-        "error": "⚠️",
-        "invalid_response": "❓",
-        "unknown": "❔"
+        "valid": "[OK]",
+        "invalid": "[X]",
+        "forbidden": "[!]",
+        "rate_limited": "[~]",
+        "timeout": "[T]",
+        "connection_error": "[C]",
+        "error": "[E]",
+        "invalid_response": "[?]",
+        "unknown": "[?]"
     }
 
-    icon = status_icons.get(result["status"], "❔")
+    icon = status_icons.get(result["status"], "[?]")
     print(f"\n{'='*60}")
     print(f"Key #{result['key_index']}: {result['key_preview']}")
     print(f"{'='*60}")
-    print(f"状态: {icon} {result['status'].upper()}")
+    print(f"Status: {icon} {result['status'].upper()}")
 
     if result["response_time_ms"]:
-        print(f"响应时间: {result['response_time_ms']}ms")
+        print(f"Response time: {result['response_time_ms']}ms")
 
     if result.get("response"):
-        print(f"响应内容: {result['response']}")
+        print(f"Response: {result['response']}")
 
     if result["error"]:
-        print(f"错误信息: {result['error']}")
+        print(f"Error: {result['error']}")
 
-    # 显示账户信息
+    # Display account info
     if result.get("user_info"):
         user_info = result["user_info"]
         if user_info.get("success"):
             data = user_info["data"].get("data", user_info["data"])
-            print(f"\n--- 账户信息 ---")
+            print(f"\n--- Account Info ---")
             if "name" in data:
-                print(f"用户名: {data['name']}")
+                print(f"Username: {data['name']}")
             if "balance" in data:
-                print(f"余额: ¥{data['balance']}")
+                print(f"Balance: ${data['balance']}")
             if "totalBalance" in data:
-                print(f"总余额: ¥{data['totalBalance']}")
+                print(f"Total balance: ${data['totalBalance']}")
             if "chargeBalance" in data:
-                print(f"充值余额: ¥{data['chargeBalance']}")
+                print(f"Charged balance: ${data['chargeBalance']}")
             if "giftBalance" in data:
-                print(f"赠送余额: ¥{data['giftBalance']}")
+                print(f"Gift balance: ${data['giftBalance']}")
             if "status" in data:
-                print(f"账户状态: {data['status']}")
+                print(f"Account status: {data['status']}")
 
 
 def main():
     print("\n" + "="*60)
-    print("       AI API Keys 可用性测试")
+    print("       AI API Keys Availability Test")
     print("="*60)
     print(f"API URL: {API_URL}")
     print(f"Model: {AI_MODEL}")
-    print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Test time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     if not API_KEYS_STR:
-        print("\n❌ 错误: 未找到 AI_API_KEY 环境变量")
+        print("\n[X] Error: AI_API_KEY environment variable not found")
         sys.exit(1)
 
-    # 解析多个keys
+    # Parse multiple keys
     api_keys = [k.strip() for k in API_KEYS_STR.split(",") if k.strip()]
-    print(f"发现 {len(api_keys)} 个API keys")
+    print(f"Found {len(api_keys)} API key(s)")
 
     results = []
     valid_count = 0
 
     for i, key in enumerate(api_keys):
-        print(f"\n正在测试 Key #{i}...")
+        print(f"\nTesting Key #{i}...")
         result = test_single_key(key, i)
         results.append(result)
         print_result(result)
@@ -189,22 +193,22 @@ def main():
         if result["status"] == "valid":
             valid_count += 1
 
-    # 汇总
+    # Summary
     print("\n" + "="*60)
-    print("       测试汇总")
+    print("       Test Summary")
     print("="*60)
-    print(f"总计: {len(api_keys)} 个keys")
-    print(f"有效: {valid_count} 个")
-    print(f"无效: {len(api_keys) - valid_count} 个")
+    print(f"Total: {len(api_keys)} key(s)")
+    print(f"Valid: {valid_count}")
+    print(f"Invalid: {len(api_keys) - valid_count}")
 
     if valid_count == len(api_keys):
-        print("\n✅ 所有API keys均可用!")
+        print("\n[OK] All API keys are valid!")
         return 0
     elif valid_count > 0:
-        print(f"\n⚠️ 部分API keys可用 ({valid_count}/{len(api_keys)})")
+        print(f"\n[!] Some API keys are valid ({valid_count}/{len(api_keys)})")
         return 1
     else:
-        print("\n❌ 所有API keys均不可用!")
+        print("\n[X] All API keys are invalid!")
         return 2
 
 

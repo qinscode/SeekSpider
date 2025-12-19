@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-Test script to verify region filtering in backfill script
-This ensures no database conflicts occur between different region backfills
+Region Filtering Test Script
+
+Test script to verify region filtering in backfill script.
+This ensures no database conflicts occur between different region backfills.
+
+Usage:
+    python tests/test_region_filter.py
 """
 
 import sys
@@ -71,14 +76,14 @@ def test_region_filtering():
         results = db.execute_query(query_perth, (test_region,))
 
         if results:
-            print(f"   ✅ Found {len(results)} Perth jobs (showing first 5):")
+            print(f"   [OK] Found {len(results)} Perth jobs (showing first 5):")
             for job_id, title in results:
                 print(f"      - Job {job_id}: {title[:50]}...")
         else:
-            print(f"   ℹ️  No Perth jobs without descriptions found")
+            print(f"   [i] No Perth jobs without descriptions found")
 
     except Exception as e:
-        print(f"   ❌ Error: {e}")
+        print(f"   [X] Error: {e}")
         return False
 
     # Verify no overlap
@@ -101,7 +106,7 @@ def test_region_filtering():
             region_jobs[region] = set(row[0] for row in results)
             print(f"   {region:15s}: {len(region_jobs[region]):4d} unique jobs")
         except Exception as e:
-            print(f"   ❌ Error for {region}: {e}")
+            print(f"   [X] Error for {region}: {e}")
             return False
 
     # Check for overlaps
@@ -113,23 +118,21 @@ def test_region_filtering():
         for region2 in regions[i+1:]:
             overlap = region_jobs[region1] & region_jobs[region2]
             if overlap:
-                print(f"   ❌ OVERLAP between {region1} and {region2}: {len(overlap)} jobs")
+                print(f"   [X] OVERLAP between {region1} and {region2}: {len(overlap)} jobs")
                 overlaps_found = True
             else:
-                print(f"   ✅ No overlap between {region1:15s} and {region2:15s}")
+                print(f"   [OK] No overlap between {region1:15s} and {region2:15s}")
 
     print("\n" + "=" * 70)
 
     if overlaps_found:
-        print("❌ FAILED: Overlaps found! Region filtering is NOT working correctly!")
+        print("[X] FAILED: Overlaps found! Region filtering is NOT working correctly!")
         print("   This WILL cause database conflicts!")
         return False
     else:
-        print("✅ SUCCESS: Region filtering is working correctly!")
+        print("[OK] SUCCESS: Region filtering is working correctly!")
         print("   Each region has distinct jobs - no conflicts will occur!")
         return True
-
-    print("=" * 70 + "\n")
 
 
 if __name__ == '__main__':
