@@ -8,7 +8,7 @@ import asyncio
 import sys
 import os
 import signal
-from typing import Literal, Dict
+from typing import Literal, Dict, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 from dateutil import tz
@@ -357,9 +357,9 @@ class BackfillParams(BaseModel):
         default=True,
         description="Run browser in headless mode"
     )
-    region: REGIONS = Field(
-        default="Perth",
-        description="Region for output organization"
+    region: Optional[REGIONS] = Field(
+        default=None,
+        description="Region for output log organization (does not filter jobs - all regions are processed)"
     )
     include_inactive: bool = Field(
         default=False,
@@ -383,8 +383,10 @@ async def run_backfill(params: BackfillParams) -> dict:
 
     logger = get_logger()
     logger.info("Starting Backfill Job Descriptions")
-    logger.info(f"Parameters: limit={params.limit}, delay={params.delay}, region={params.region}")
+    logger.info(f"Parameters: limit={params.limit}, delay={params.delay}")
+    logger.info(f"Region (for output logs): {params.region or 'All regions'}")
     logger.info(f"Headless mode: {params.headless}, Include inactive: {params.include_inactive}")
+    logger.info("Note: All regions will be processed regardless of region parameter")
 
     # Get current run_id from context
     pipeline_run = run_context.get()
@@ -405,8 +407,10 @@ async def run_backfill(params: BackfillParams) -> dict:
             cmd.extend(['--limit', str(params.limit)])
 
         cmd.extend(['--delay', str(params.delay)])
-        cmd.extend(['--region', params.region])
         cmd.extend(['--restart-interval', str(params.restart_interval)])
+
+        if params.region:
+            cmd.extend(['--region', params.region])
 
         if params.headless:
             cmd.append('--headless')
@@ -465,7 +469,7 @@ async def run_backfill(params: BackfillParams) -> dict:
         result = {
             "status": "success",
             "message": "Backfill completed successfully",
-            "region": params.region,
+            "region": params.region or "All regions",
             "limit": params.limit,
             "timestamp": datetime.now().isoformat()
         }
@@ -506,8 +510,41 @@ async def run_backfill(params: BackfillParams) -> dict:
 
 register_pipeline(
     id="backfill_job_descriptions",
-    description="Backfill missing job descriptions from Seek job pages",
+    description="Backfill missing job descriptions from Seek job pages (processes all regions)",
     tasks=[run_backfill],
     params=BackfillParams,
-    triggers=[],  # No automatic triggers - run manually as needed
+    triggers=[
+        # Daily at 9 AM Perth time
+        Trigger(
+            id="daily_9am",
+            name="Daily 9 AM Backfill",
+            description="Backfill missing job descriptions at 9:00 AM - processes jobs from all regions",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region=None,  # Process all regions
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=9, minute=0, timezone=PERTH_TZ),
+        ),
+        # Daily at 9 PM Perth time
+        Trigger(
+            id="daily_9pm",
+            name="Daily 9 PM Backfill",
+            description="Backfill missing job descriptions at 9:00 PM - processes jobs from all regions",
+            params=BackfillParams(
+                limit=None,
+                delay=5.0,
+                headless=True,
+                region=None,  # Process all regions
+                include_inactive=False,
+                skip_ai=False,
+                restart_interval=30,
+            ),
+            schedule=CronTrigger(hour=21, minute=0, timezone=PERTH_TZ),
+        ),
+    ],
 )
