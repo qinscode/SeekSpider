@@ -76,49 +76,60 @@ class AIAnalyzer:
     def _run_tech_stack_analysis(self):
         """Run tech stack analysis on jobs"""
         jobs = self._get_jobs_for_tech_analysis()
+        total = len(jobs)
 
-        self.logger.info(f"Found {len(jobs)} jobs for tech stack analysis")
+        self.logger.info(f"Found {total} jobs for tech stack analysis")
 
         for i, (job_id, description) in enumerate(jobs, 1):
             if self.config.limit and i > self.config.limit:
                 break
 
             try:
+                desc_preview = (description[:50] + '...') if len(description) > 50 else description
+                self.logger.info(f"({i}/{total}) Analyzing tech stack for job {job_id}: {desc_preview}")
+
                 result = self._tech_analyzer.analyze_job(job_id, description)
                 if result:
                     self.stats['tech_analyzed'] += 1
-                    self.logger.info(f"[{i}/{len(jobs)}] Tech analyzed job {job_id}: {result}")
+                    self.logger.info(f"({i}/{total}) Success: {result}")
                 else:
                     self.stats['tech_skipped'] += 1
+                    self.logger.info(f"({i}/{total}) No tech stack found, saved as []")
             except Exception as e:
                 self.stats['tech_failed'] += 1
-                self.logger.warning(f"[{i}/{len(jobs)}] Tech analysis failed for job {job_id}: {e}")
+                self.logger.warning(f"({i}/{total}) Failed for job {job_id}: {e}")
 
     def _run_salary_analysis(self):
         """Run salary normalization on jobs"""
         jobs = self._get_jobs_for_salary_analysis()
+        total = len(jobs)
 
-        self.logger.info(f"Found {len(jobs)} jobs for salary normalization")
+        self.logger.info(f"Found {total} jobs for salary normalization")
 
         for i, (job_id, pay_range) in enumerate(jobs, 1):
             if self.config.limit and i > self.config.limit:
                 break
 
             try:
+                self.logger.info(f"({i}/{total}) Normalizing salary for job {job_id}: {pay_range}")
+
                 result = self._salary_normalizer.normalize_salary(job_id, pay_range)
                 if result and (result[0] > 0 or result[1] > 0):
                     self.stats['salary_normalized'] += 1
-                    self.logger.info(f"[{i}/{len(jobs)}] Salary normalized job {job_id}: {result}")
+                    self.logger.info(f"({i}/{total}) Success: {result}")
                 else:
                     self.stats['salary_skipped'] += 1
             except Exception as e:
                 self.stats['salary_failed'] += 1
-                self.logger.warning(f"[{i}/{len(jobs)}] Salary normalization failed for job {job_id}: {e}")
+                self.logger.warning(f"({i}/{total}) Salary normalization failed for job {job_id}: {e}")
 
     def _get_jobs_for_tech_analysis(self) -> List[Tuple[int, str]]:
         """Get jobs that need tech stack analysis"""
-        conditions = ['"JobDescription" IS NOT NULL', '"JobDescription" != \'\'']
-
+        conditions = [
+            '"JobDescription" IS NOT NULL',
+            '"JobDescription" != \'\'',
+        ]
+lingw
         if self.config.only_missing:
             conditions.append('("TechStack" IS NULL OR "TechStack" = \'[]\' OR "TechStack" = \'\')')
 
@@ -144,7 +155,12 @@ class AIAnalyzer:
 
     def _get_jobs_for_salary_analysis(self) -> List[Tuple[int, str]]:
         """Get jobs that need salary normalization"""
-        conditions = ['"PayRange" IS NOT NULL', '"PayRange" != \'\'']
+        conditions = [
+            '"PayRange" IS NOT NULL',
+            '"PayRange" != \'\'',
+            # Only analyze jobs posted within the last 2 months
+            '"PostedDate" >= NOW() - INTERVAL \'2 months\''
+        ]
 
         if self.config.only_missing:
             conditions.append('("MinSalary" IS NULL OR "MinSalary" = 0)')

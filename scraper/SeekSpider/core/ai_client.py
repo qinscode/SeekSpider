@@ -36,7 +36,7 @@ class AIClient:
         # Track continuous failure time for stopping condition
         self.continuous_failure_start = None
         self.max_continuous_failure_time = timedelta(minutes=5)  # Stop after 5 minutes of continuous failures
-        self.all_keys_exhausted_wait = 60  # Wait 1 minute when all keys exhausted
+        self.all_keys_exhausted_wait = 60  # Wait 1 minute (60s) when all keys exhausted
 
         if len(self.api_keys) > 1:
             self.logger.info(f"AI Client initialized with {len(self.api_keys)} API keys")
@@ -128,12 +128,13 @@ class AIClient:
 
     def _try_reset_all_keys(self) -> bool:
         """
-        When all keys are exhausted, wait and reset to retry.
+        When all keys are exhausted after full rotation, wait and reset to retry.
 
         Logic:
-        - Wait 1 minute, then reset all keys and retry
-        - Continue indefinitely until manually stopped
-        - Only stop if 5 minutes of continuous failures with no success
+        - Only called when ALL keys have been tried and ALL are EXHAUSTED
+        - Wait 1 minute (60s), then reset all keys and retry
+        - Continue retrying until manually stopped or 5 minutes of continuous failures
+        - Any successful request resets the 5-minute timer
 
         Returns:
             True if keys were reset and should retry, False if max failure time exceeded
@@ -208,18 +209,12 @@ class AIClient:
 
         # Track which keys have been tried for rate limit errors
         keys_tried_for_rate_limit = set()
+        # Track the starting key when exhausted rotation begins (None = not in rotation)
+        exhausted_rotation_start_key = None
 
         for attempt in range(max_retries):
             # Check if any exhausted keys have cooled down
             self._check_and_reset_cooled_keys()
-
-            # Check if all keys are exhausted
-            if self._get_available_key_count() == 0:
-                # Try to reset all keys and retry
-                if self._try_reset_all_keys(wait_seconds=30):
-                    continue  # Retry with reset keys
-                else:
-                    raise Exception("All API keys are exhausted (insufficient balance)")
 
             current_key = self.current_key_index
             self.key_stats[current_key]['requests'] += 1
@@ -252,6 +247,8 @@ class AIClient:
                 if response.status_code == 200:
                     # Reset continuous failure timer on success
                     self._reset_continuous_failure_timer()
+                    # Clear exhausted rotation tracking on success
+                    exhausted_rotation_start_key = None
                     return response.json()['choices'][0]['message']['content']
 
                 # Handle 403 - insufficient balance, mark key as exhausted
@@ -259,15 +256,33 @@ class AIClient:
                     self.key_stats[current_key]['errors'] += 1
                     self._mark_key_exhausted(current_key)
 
-                    # Try rotating to another key
-                    if self._rotate_key(reason="insufficient balance"):
-                        continue  # Retry with new key
-                    else:
-                        # All keys exhausted, try reset and retry
+                    # Record starting key if this is the first 403 in this rotation
+                    if exhausted_rotation_start_key is None:
+                        exhausted_rotation_start_key = current_key
+                        self.logger.info(f"Starting exhausted key rotation from Key #{current_key}")
+
+                    # Calculate next key
+                    next_key = (current_key + 1) % len(self.api_keys)
+
+                    # Check if we've completed a full rotation (back to start)
+                    if next_key == exhausted_rotation_start_key:
+                        # Completed full rotation, all keys exhausted, enter wait
+                        self.logger.warning(
+                            f"Completed full rotation: all {len(self.api_keys)} keys EXHAUSTED"
+                        )
                         if self._try_reset_all_keys():
+                            exhausted_rotation_start_key = None  # Reset for next round
                             continue
                         else:
                             raise Exception("All API keys are exhausted (insufficient balance)")
+                    else:
+                        # Still have keys to try in this rotation
+                        self.logger.info(
+                            f"Trying next key: Key #{current_key} ({self._get_key_preview(current_key)}) -> "
+                            f"Key #{next_key} ({self._get_key_preview(next_key)})"
+                        )
+                        self.current_key_index = next_key
+                        continue
 
                 # Handle rate limit (429) - try rotating to another key first
                 if response.status_code == 429:
@@ -348,4 +363,4 @@ class AIClient:
         if self.exhausted_keys:
             self.logger.info(f"Resetting {len(self.exhausted_keys)} exhausted keys")
             self.exhausted_keys.clear()
-            self.full_rotation_count = 0
+            self.continuous_failure_start = None

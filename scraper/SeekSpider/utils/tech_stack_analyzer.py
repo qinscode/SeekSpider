@@ -67,7 +67,12 @@ class TechStackAnalyzer:
             raise
 
     def _clean_api_response(self, response_text):
-        """Clean and parse API response"""
+        """Clean and parse API response
+
+        Returns:
+            list: Parsed tech stack list (can be empty [])
+            None: If parsing failed (invalid response)
+        """
         try:
             # Try to find content between first [ and last ]
             start = response_text.find('[')
@@ -81,42 +86,36 @@ class TechStackAnalyzer:
             return json.loads(response_text)
         except json.JSONDecodeError:
             self.logger.warning(f"Failed to parse response: {response_text}")
-            return []
+            return None  # Return None on parse error, not [] (to distinguish from valid empty result)
 
     @retry_on_db_error()
     def analyze_job(self, job_id, description):
         """Analyze a single job's tech stack"""
         try:
-            # Add description preview to log
-            desc_preview = (description[:50] + '...') if len(description) > 50 else description
-            self.logger.info(f"Analyzing job {job_id} - Description: {desc_preview}")
-
             # Get AI analysis
             response = self.ai_client.analyze_text(self.prompt, description)
             if not response:
-                self.logger.warning(f"No response from AI for job {job_id}")
+                # API error or no response - don't update database
+                self.logger.warning(f"No response from AI for job {job_id}, skipping database update")
                 return None
 
             # Parse tech stack from response
             tech_stack = self._clean_api_response(response)
             if not isinstance(tech_stack, list):
-                self.logger.warning(f"Invalid response format for job {job_id}")
+                # Invalid response format - don't update database
+                self.logger.warning(f"Invalid response format for job {job_id}, skipping database update")
                 return None
 
-            # Only update database if tech_stack is not empty
-            if not tech_stack or len(tech_stack) == 0:
-                self.logger.info(f"No tech stack found for job {job_id}, skipping database update")
-                return None
-
-            # Update database with valid tech stack
+            # AI successfully analyzed - update database (even if empty [])
+            # Empty [] means AI found no tech stack, which is valid data
             self.db.update_job(job_id, {
                 "TechStack": json.dumps(tech_stack)
             })
 
-            self.logger.info(f"Successfully analyzed job {job_id}: {tech_stack}")
             return tech_stack
 
         except Exception as e:
+            desc_preview = (description[:50] + '...') if len(description) > 50 else description
             self.logger.error(f"Error analyzing job {job_id} - Description: {desc_preview}: {str(e)}")
             raise  # Let decorator catch exception and retry
 

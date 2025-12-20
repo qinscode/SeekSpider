@@ -28,6 +28,15 @@ const RunsList: React.FC<Props> = ({ pipelineId, query, triggerId }) => {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
+  const matchesContext = useCallback(
+    (run: PipelineRun) => {
+      if (pipelineId && run.pipeline_id !== pipelineId) return false
+      if (triggerId && run.trigger_id !== triggerId) return false
+      return true
+    },
+    [pipelineId, triggerId]
+  )
+
   const onWsMessage = useCallback(
     (data: any) => {
       const run = {
@@ -35,6 +44,10 @@ const RunsList: React.FC<Props> = ({ pipelineId, query, triggerId }) => {
         start_time: toValidDate(data.run.start_time),
         trigger_id: data.trigger,
         pipeline_id: data.pipeline,
+      }
+
+      if (!matchesContext(run)) {
+        return
       }
 
       setRuns((prevRuns) => {
@@ -60,7 +73,7 @@ const RunsList: React.FC<Props> = ({ pipelineId, query, triggerId }) => {
         })
       }
     },
-    [pipelineId, queryClient, triggerId]
+    [matchesContext, pipelineId, queryClient, triggerId]
   )
 
   useEffect(() => {
@@ -73,9 +86,9 @@ const RunsList: React.FC<Props> = ({ pipelineId, query, triggerId }) => {
 
   useEffect(() => {
     if (query.data) {
-      setRuns(query.data)
+      setRuns(query.data.filter(matchesContext))
     }
-  }, [query.data])
+  }, [matchesContext, query.data])
 
   const numberOfColumns = 4 + Number(!!pipelineId) + Number(!!triggerId)
 

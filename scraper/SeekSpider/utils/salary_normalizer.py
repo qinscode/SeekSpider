@@ -68,8 +68,6 @@ class SalaryNormalizer:
                 self.logger.debug(f"No salary info for job {job_id}")
                 return [0, 0]
 
-            self.logger.info(f"Normalizing salary for job {job_id}: {pay_range}")
-
             # Get AI analysis
             response = self.ai_client.analyze_text(self.prompt, pay_range)
             if not response:
@@ -81,7 +79,6 @@ class SalaryNormalizer:
 
             # Only update database if we have valid salary (at least one non-zero value)
             if salary_range[0] <= 0 and salary_range[1] <= 0:
-                self.logger.info(f"No valid salary found for job {job_id}, skipping database update")
                 return salary_range
 
             # Update database with valid salary
@@ -90,9 +87,6 @@ class SalaryNormalizer:
                 "MaxSalary": int(salary_range[1])
             })
 
-            self.logger.info(
-                f"Normalized salary for job {job_id}: {salary_range}"
-            )
             return salary_range
 
         except Exception as e:
