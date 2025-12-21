@@ -19,6 +19,39 @@ class SalaryNormalizer:
         self.logger = logger
         self.prompt = self._load_prompt()
 
+    def _truncate_text(self, text, limit: int = 200):
+        if text is None:
+            return None
+        text = str(text)
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "..."
+
+    def _set_zero_salary(
+        self,
+        job_id,
+        reason: str = None,
+        pay_range: str = None,
+        ai_response: str = None,
+        salary_range=None,
+    ):
+        """Persist zero salary to mark jobs with no usable salary info."""
+        self.db.update_job(job_id, {
+            "MinSalary": 0,
+            "MaxSalary": 0
+        })
+        if reason:
+            log_pay_range = self._truncate_text(pay_range)
+            log_ai_response = self._truncate_text(ai_response)
+            self.logger.info(
+                "Set salary to 0 for job %s: reason=%s, pay_range=%s, ai_response=%s, parsed=%s",
+                job_id,
+                reason,
+                log_pay_range,
+                log_ai_response,
+                salary_range,
+            )
+
     def _load_prompt(self):
         """Load the salary normalization prompt"""
         try:
@@ -64,8 +97,15 @@ class SalaryNormalizer:
     def normalize_salary(self, job_id, pay_range):
         """Normalize a single job's salary range"""
         try:
-            if not pay_range:
+            if not pay_range or str(pay_range).strip() == "":
                 self.logger.debug(f"No salary info for job {job_id}")
+                self._set_zero_salary(
+                    job_id,
+                    reason="empty PayRange",
+                    pay_range=pay_range,
+                    ai_response=None,
+                    salary_range=[0, 0],
+                )
                 return [0, 0]
 
             # Get AI analysis
@@ -79,6 +119,13 @@ class SalaryNormalizer:
 
             # Only update database if we have valid salary (at least one non-zero value)
             if salary_range[0] <= 0 and salary_range[1] <= 0:
+                self._set_zero_salary(
+                    job_id,
+                    reason="no usable salary in AI response",
+                    pay_range=pay_range,
+                    ai_response=response,
+                    salary_range=salary_range,
+                )
                 return salary_range
 
             # Update database with valid salary
