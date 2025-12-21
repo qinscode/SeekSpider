@@ -128,7 +128,7 @@ class AIAnalyzer:
         conditions = [
             '"JobDescription" IS NOT NULL',
             'TRIM("JobDescription") != \'\'',
-            '("TechStack" IS NULL OR "TechStack" = \'[]\' OR TRIM("TechStack") = \'\')',
+            '("TechStack" IS NULL OR TRIM("TechStack") = \'\')',
             # # Only analyze jobs posted within the last 2 months
             # '"PostedDate" >= NOW() - INTERVAL \'2 months\''
         ]
@@ -158,10 +158,9 @@ class AIAnalyzer:
         conditions = [
             '"PayRange" IS NOT NULL',
             'TRIM("PayRange") != \'\'',
-            '("MinSalary" IS NULL OR "MinSalary" = 0)',
-            '("MaxSalary" IS NULL OR "MaxSalary" = 0)',
-            # Only analyze jobs posted within the last 2 months
-            '"PostedDate" >= NOW() - INTERVAL \'2 months\''
+            '("MinSalary" IS NULL )',
+            '("MaxSalary" IS NULL )',
+
         ]
 
         if self.config.region_filter:
