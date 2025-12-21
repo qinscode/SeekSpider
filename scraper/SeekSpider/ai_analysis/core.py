@@ -127,11 +127,11 @@ class AIAnalyzer:
         """Get jobs that need tech stack analysis"""
         conditions = [
             '"JobDescription" IS NOT NULL',
-            '"JobDescription" != \'\'',
+            'TRIM("JobDescription") != \'\'',
+            '("TechStack" IS NULL OR "TechStack" = \'[]\' OR TRIM("TechStack") = \'\')',
+            # # Only analyze jobs posted within the last 2 months
+            # '"PostedDate" >= NOW() - INTERVAL \'2 months\''
         ]
-lingw
-        if self.config.only_missing:
-            conditions.append('("TechStack" IS NULL OR "TechStack" = \'[]\' OR "TechStack" = \'\')')
 
         if self.config.region_filter:
             conditions.append(f'"Region" = \'{self.config.region_filter}\'')
@@ -157,13 +157,12 @@ lingw
         """Get jobs that need salary normalization"""
         conditions = [
             '"PayRange" IS NOT NULL',
-            '"PayRange" != \'\'',
+            'TRIM("PayRange") != \'\'',
+            '("MinSalary" IS NULL OR "MinSalary" = 0)',
+            '("MaxSalary" IS NULL OR "MaxSalary" = 0)',
             # Only analyze jobs posted within the last 2 months
             '"PostedDate" >= NOW() - INTERVAL \'2 months\''
         ]
-
-        if self.config.only_missing:
-            conditions.append('("MinSalary" IS NULL OR "MinSalary" = 0)')
 
         if self.config.region_filter:
             conditions.append(f'"Region" = \'{self.config.region_filter}\'')
