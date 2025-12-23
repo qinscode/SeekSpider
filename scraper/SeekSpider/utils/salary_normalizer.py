@@ -44,12 +44,8 @@ class SalaryNormalizer:
             log_pay_range = self._truncate_text(pay_range)
             log_ai_response = self._truncate_text(ai_response)
             self.logger.info(
-                "Set salary to 0 for job %s: reason=%s, pay_range=%s, ai_response=%s, parsed=%s",
-                job_id,
-                reason,
-                log_pay_range,
-                log_ai_response,
-                salary_range,
+                f"Set salary to 0 for job {job_id}: reason={reason}, "
+                f"pay_range={log_pay_range}, ai_response={log_ai_response}, parsed={salary_range}"
             )
 
     def _load_prompt(self):
