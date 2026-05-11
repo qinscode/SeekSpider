@@ -21,10 +21,46 @@ from plombery.pipeline.context import run_context
 # Global dictionary to track running processes by run_id
 _running_processes: Dict[int, asyncio.subprocess.Process] = {}
 
+# Hard timeouts to prevent hung subprocesses from holding FDs/PIDs indefinitely.
+# Tuned to comfortably exceed observed run durations while still bounding leaks.
+SPIDER_TIMEOUT_SECONDS = 10800     # 3h — scrapy crawl one region, all subclasses
+BACKFILL_TIMEOUT_SECONDS = 21600   # 6h — selenium-driven, slower
+AI_ANALYSIS_TIMEOUT_SECONDS = 10800  # 3h
+
 
 def get_running_process(run_id: int):
     """Get the running process for a specific run_id"""
     return _running_processes.get(run_id)
+
+
+async def _stream_and_wait_with_timeout(process, logger, timeout_seconds: int, label: str) -> int:
+    """Stream subprocess stdout into logger and wait for it to exit.
+
+    On timeout, terminate (then kill if needed) and re-raise asyncio.TimeoutError.
+    """
+    async def _stream_and_wait():
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            decoded = line.decode('utf-8').strip()
+            if decoded:
+                logger.info(decoded)
+        return await process.wait()
+
+    try:
+        return await asyncio.wait_for(_stream_and_wait(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        logger.error(f"{label} exceeded timeout of {timeout_seconds}s, terminating PID {process.pid}")
+        if process.returncode is None:
+            try:
+                process.terminate()
+                await asyncio.wait_for(process.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                logger.warning(f"{label} did not terminate within 10s, killing PID {process.pid}")
+                process.kill()
+                await process.wait()
+        raise
 
 # Get project directories
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -129,17 +165,16 @@ async def run_seek_spider(params: SeekSpiderParams) -> dict:
             _running_processes[run_id] = process
             logger.info(f"Registered process for run #{run_id} (PID: {process.pid})")
 
-        # Stream output to logger asynchronously
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            line = line.decode('utf-8').strip()
-            if line:
-                logger.info(line)
-
-        # Wait for process to complete
-        return_code = await process.wait()
+        try:
+            return_code = await _stream_and_wait_with_timeout(
+                process, logger, SPIDER_TIMEOUT_SECONDS, "Spider"
+            )
+        except asyncio.TimeoutError:
+            return {
+                "status": "timeout",
+                "error": f"Spider exceeded timeout of {SPIDER_TIMEOUT_SECONDS}s",
+                "timestamp": datetime.now().isoformat()
+            }
 
         if return_code != 0:
             # Check if it was cancelled
@@ -517,17 +552,16 @@ async def run_backfill(params: BackfillParams) -> dict:
             _running_processes[run_id] = process
             logger.info(f"Registered process for run #{run_id} (PID: {process.pid})")
 
-        # Stream output to logger asynchronously
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            line = line.decode('utf-8').strip()
-            if line:
-                logger.info(line)
-
-        # Wait for process to complete
-        return_code = await process.wait()
+        try:
+            return_code = await _stream_and_wait_with_timeout(
+                process, logger, BACKFILL_TIMEOUT_SECONDS, "Backfill"
+            )
+        except asyncio.TimeoutError:
+            return {
+                "status": "timeout",
+                "error": f"Backfill exceeded timeout of {BACKFILL_TIMEOUT_SECONDS}s",
+                "timestamp": datetime.now().isoformat()
+            }
 
         if return_code != 0:
             # Check if it was cancelled
@@ -1070,17 +1104,16 @@ async def run_ai_analysis(params: AIAnalysisParams) -> dict:
             _running_processes[run_id] = process
             logger.info(f"Registered process for run #{run_id} (PID: {process.pid})")
 
-        # Stream output to logger asynchronously
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            line = line.decode('utf-8').strip()
-            if line:
-                logger.info(line)
-
-        # Wait for process to complete
-        return_code = await process.wait()
+        try:
+            return_code = await _stream_and_wait_with_timeout(
+                process, logger, AI_ANALYSIS_TIMEOUT_SECONDS, "AI Analysis"
+            )
+        except asyncio.TimeoutError:
+            return {
+                "status": "timeout",
+                "error": f"AI Analysis exceeded timeout of {AI_ANALYSIS_TIMEOUT_SECONDS}s",
+                "timestamp": datetime.now().isoformat()
+            }
 
         if return_code != 0:
             # Check if it was cancelled

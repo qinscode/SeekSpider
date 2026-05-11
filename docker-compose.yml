@@ -31,6 +31,11 @@ services:
       - ./.env:/app/.env:ro
       - ./output:/app/output
       - ./data:/app/data
+    init: true
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
