@@ -13,16 +13,16 @@ from ai_analysis import AsyncAIAnalyzer, AIAnalysisConfig, AIAnalyzer
 class BackfillAIProcessor:
     """Wrapper for AI analysis in backfill context"""
 
-    def __init__(self, config=None, logger: logging.Logger = None):
+    def __init__(self, config=None, logger: logging.Logger = None, enabled: bool = True):
         self.logger = logger or logging.getLogger('backfill.ai')
+        self._enabled = enabled
+        self._async_analyzer = None
 
-        # Create AI analysis config
-        ai_config = AIAnalysisConfig(
-            only_missing=True,  # Only analyze missing
-        )
-
-        self._async_analyzer = AsyncAIAnalyzer(ai_config, self.logger)
-        self._enabled = True
+        if self._enabled:
+            ai_config = AIAnalysisConfig(
+                only_missing=True,  # Only analyze missing
+            )
+            self._async_analyzer = AsyncAIAnalyzer(ai_config, self.logger)
 
     def start(self) -> bool:
         """Start the async AI processing thread"""
@@ -32,15 +32,19 @@ class BackfillAIProcessor:
 
     def stop(self):
         """Stop the async AI processing thread"""
-        self._async_analyzer.stop()
+        if self._async_analyzer:
+            self._async_analyzer.stop()
 
     def queue_analysis(self, job_id: int, description: str, pay_range: str = None):
         """Queue a job for async AI analysis"""
-        self._async_analyzer.queue_analysis(job_id, description, pay_range)
+        if self._async_analyzer:
+            self._async_analyzer.queue_analysis(job_id, description, pay_range)
 
     def get_stats(self) -> Dict[str, int]:
         """Get AI processing statistics"""
-        return self._async_analyzer.get_stats()
+        if self._async_analyzer:
+            return self._async_analyzer.get_stats()
+        return {}
 
 
 def run_post_ai_analysis(logger: logging.Logger, region_filter: str = None):

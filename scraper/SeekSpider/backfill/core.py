@@ -32,7 +32,9 @@ class JobDescriptionBackfiller:
         self.logger = logger or logging.getLogger('backfill')
 
         # Managers
-        self.ai_processor = BackfillAIProcessor(self.config, self.logger)
+        self.ai_processor = BackfillAIProcessor(
+            self.config, self.logger, enabled=self.config.enable_async_ai
+        )
 
         # HTTP session shared across requests (connection pooling).
         self.session = requests.Session()

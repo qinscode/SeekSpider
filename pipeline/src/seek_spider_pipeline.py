@@ -26,6 +26,9 @@ _running_processes: Dict[int, asyncio.subprocess.Process] = {}
 # hammering the same API and database. Concurrent triggers skip instead of
 # stacking. Safe to check-and-set without a lock: asyncio is single-threaded
 # and there is no await between the check and the assignment.
+# Because a skipped trigger is simply lost, each run must stay short: keep the
+# AI step out of backfill (skip_ai=True) and don't schedule two regions at the
+# same minute.
 _backfill_active: bool = False
 
 # Hard timeouts to prevent hung subprocesses from holding FDs/PIDs indefinitely.
@@ -486,8 +489,13 @@ class BackfillParams(BaseModel):
         description="Include inactive jobs in backfill"
     )
     skip_ai: bool = Field(
-        default=False,
-        description="Skip AI analysis after backfill"
+        default=True,
+        description=(
+            "Skip AI analysis after backfill. Default True: the post-backfill AI step "
+            "can run for hours over the whole backlog while holding the backfill slot, "
+            "which makes every other region's trigger skip. AI is handled by the "
+            "separate ai_analysis pipeline."
+        )
     )
     restart_interval: int = Field(
         default=30,
@@ -646,7 +654,8 @@ register_pipeline(
     tasks=[run_backfill],
     params=BackfillParams,
     triggers=[
-        # Perth - 9:00 AM & 9:00 PM
+        # Perth - 8:55 AM & 8:55 PM (offset from Sydney 9:00 so the overlap
+        # guard does not skip one of them)
         Trigger(
             id="perth_9am",
             name="Perth 9 AM Backfill",
@@ -657,10 +666,10 @@ register_pipeline(
                 headless=True,
                 region="Perth",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
-            schedule=CronTrigger(hour=9, minute=0, timezone=PERTH_TZ),
+            schedule=CronTrigger(hour=8, minute=55, timezone=PERTH_TZ),
         ),
         Trigger(
             id="perth_9pm",
@@ -672,10 +681,10 @@ register_pipeline(
                 headless=True,
                 region="Perth",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
-            schedule=CronTrigger(hour=21, minute=0, timezone=PERTH_TZ),
+            schedule=CronTrigger(hour=20, minute=55, timezone=PERTH_TZ),
         ),
 
         # Sydney - 9:00 AM
@@ -689,7 +698,7 @@ register_pipeline(
                 headless=True,
                 region="Sydney",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=0, timezone=PERTH_TZ),
@@ -705,7 +714,7 @@ register_pipeline(
                 headless=True,
                 region="Sydney",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=14, minute=30, timezone=PERTH_TZ),
@@ -721,7 +730,7 @@ register_pipeline(
                 headless=True,
                 region="Sydney",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=15, minute=30, timezone=PERTH_TZ),
@@ -737,7 +746,7 @@ register_pipeline(
                 headless=True,
                 region="Sydney",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=17, minute=30, timezone=PERTH_TZ),
@@ -753,7 +762,7 @@ register_pipeline(
                 headless=True,
                 region="Sydney",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=0, timezone=PERTH_TZ),
@@ -770,7 +779,7 @@ register_pipeline(
                 headless=True,
                 region="Melbourne",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=5, timezone=PERTH_TZ),
@@ -786,7 +795,7 @@ register_pipeline(
                 headless=True,
                 region="Melbourne",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=14, minute=35, timezone=PERTH_TZ),
@@ -802,7 +811,7 @@ register_pipeline(
                 headless=True,
                 region="Melbourne",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=15, minute=35, timezone=PERTH_TZ),
@@ -818,7 +827,7 @@ register_pipeline(
                 headless=True,
                 region="Melbourne",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=17, minute=35, timezone=PERTH_TZ),
@@ -834,7 +843,7 @@ register_pipeline(
                 headless=True,
                 region="Melbourne",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=5, timezone=PERTH_TZ),
@@ -851,7 +860,7 @@ register_pipeline(
                 headless=True,
                 region="Brisbane",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=15, timezone=PERTH_TZ),
@@ -866,7 +875,7 @@ register_pipeline(
                 headless=True,
                 region="Brisbane",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=15, timezone=PERTH_TZ),
@@ -883,7 +892,7 @@ register_pipeline(
                 headless=True,
                 region="Gold Coast",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=20, timezone=PERTH_TZ),
@@ -898,7 +907,7 @@ register_pipeline(
                 headless=True,
                 region="Gold Coast",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=20, timezone=PERTH_TZ),
@@ -915,7 +924,7 @@ register_pipeline(
                 headless=True,
                 region="Adelaide",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=25, timezone=PERTH_TZ),
@@ -930,7 +939,7 @@ register_pipeline(
                 headless=True,
                 region="Adelaide",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=25, timezone=PERTH_TZ),
@@ -947,7 +956,7 @@ register_pipeline(
                 headless=True,
                 region="Canberra",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=30, timezone=PERTH_TZ),
@@ -962,7 +971,7 @@ register_pipeline(
                 headless=True,
                 region="Canberra",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=30, timezone=PERTH_TZ),
@@ -979,7 +988,7 @@ register_pipeline(
                 headless=True,
                 region="Hobart",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=35, timezone=PERTH_TZ),
@@ -994,7 +1003,7 @@ register_pipeline(
                 headless=True,
                 region="Hobart",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=35, timezone=PERTH_TZ),
@@ -1011,7 +1020,7 @@ register_pipeline(
                 headless=True,
                 region="Darwin",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=9, minute=40, timezone=PERTH_TZ),
@@ -1026,7 +1035,7 @@ register_pipeline(
                 headless=True,
                 region="Darwin",
                 include_inactive=False,
-                skip_ai=False,
+                skip_ai=True,  # AI runs in the separate ai_analysis pipeline
                 restart_interval=30,
             ),
             schedule=CronTrigger(hour=21, minute=40, timezone=PERTH_TZ),

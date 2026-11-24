@@ -135,7 +135,8 @@ def main():
     # Run post AI analysis if needed
     stats = backfiller.get_stats()
     if not args.skip_ai and stats['success'] > 0:
-        run_post_ai_analysis(logger)
+        # Scope to the same region; an unscoped run sweeps every region's backlog.
+        run_post_ai_analysis(logger, region_filter=args.region_filter)
     elif args.skip_ai:
         logger.info("AI analysis skipped (--skip-ai flag)")
     else:
