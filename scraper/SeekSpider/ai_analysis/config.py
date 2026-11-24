@@ -32,6 +32,9 @@ class AIAnalysisConfig:
     # Output
     region: Optional[str] = None  # Region for output organization
 
+    # Concurrency
+    workers: int = 1  # Number of concurrent worker threads (1 = serial)
+
     def __post_init__(self):
         if self.analysis_types is None:
             self.analysis_types = [AnalysisType.ALL]

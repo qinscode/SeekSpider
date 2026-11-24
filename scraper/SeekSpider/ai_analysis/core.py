@@ -5,6 +5,7 @@ Core AI Analysis functionality.
 import logging
 import queue
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, List, Tuple
 
 from .config import AIAnalysisConfig, AnalysisType
@@ -32,6 +33,10 @@ class AIAnalyzer:
             'salary_skipped': 0,
             'salary_failed': 0,
         }
+        self._stats_lock = threading.Lock()
+        # Set when every AI key is out of balance; remaining jobs are skipped
+        # instead of each burning minutes of retries.
+        self._abort = threading.Event()
 
     def _init_components(self):
         """Initialize AI components"""
@@ -40,12 +45,13 @@ class AIAnalyzer:
 
         from core.config import config as app_config
         from core.database import DatabaseManager
-        from core.ai_client import AIClient
+        from core.ai_client import AIClient, AIKeysExhaustedError
         from core.logger import Logger
         from utils.tech_stack_analyzer import TechStackAnalyzer
         from utils.salary_normalizer import SalaryNormalizer
 
         self._app_config = app_config
+        self._exhausted_error = AIKeysExhaustedError
         self._db = DatabaseManager(app_config)
         self._ai_client = AIClient(app_config, self.logger)  # Pass logger
 
@@ -67,61 +73,108 @@ class AIAnalyzer:
             self.logger.info("Running Tech Stack Analysis...")
             self._run_tech_stack_analysis()
 
-        if self.config.should_run_salary():
+        if self.config.should_run_salary() and not self._abort.is_set():
             self.logger.info("Running Salary Normalization...")
             self._run_salary_analysis()
 
+        if self._abort.is_set():
+            self.logger.error(
+                "AI analysis stopped early: all API keys are out of balance. "
+                "Top up the AI account (or add a funded key) and re-run."
+            )
+
         self._print_summary()
+
+    def _bump(self, key: str):
+        """Thread-safe increment of a stats counter"""
+        with self._stats_lock:
+            self.stats[key] += 1
+
+    def _trip_abort(self, e: Exception):
+        """Stop the run (logged once) when the AI keys are out of balance."""
+        if not self._abort.is_set():
+            self._abort.set()
+            self.logger.error(f"{e} - aborting remaining AI analysis jobs")
 
     def _run_tech_stack_analysis(self):
         """Run tech stack analysis on jobs"""
         jobs = self._get_jobs_for_tech_analysis()
+        if self.config.limit:
+            jobs = jobs[:self.config.limit]
         total = len(jobs)
 
         self.logger.info(f"Found {total} jobs for tech stack analysis")
 
-        for i, (job_id, description) in enumerate(jobs, 1):
-            if self.config.limit and i > self.config.limit:
-                break
-
+        def process(indexed_job):
+            i, (job_id, description) = indexed_job
+            if self._abort.is_set():
+                return
             try:
                 desc_preview = (description[:50] + '...') if len(description) > 50 else description
                 self.logger.info(f"({i}/{total}) Analyzing tech stack for job {job_id}: {desc_preview}")
 
                 result = self._tech_analyzer.analyze_job(job_id, description)
                 if result:
-                    self.stats['tech_analyzed'] += 1
+                    self._bump('tech_analyzed')
                     self.logger.info(f"({i}/{total}) Success: {result}")
                 else:
-                    self.stats['tech_skipped'] += 1
+                    self._bump('tech_skipped')
                     self.logger.info(f"({i}/{total}) No tech stack found, saved as []")
+            except self._exhausted_error as e:
+                self._trip_abort(e)
             except Exception as e:
-                self.stats['tech_failed'] += 1
+                self._bump('tech_failed')
                 self.logger.warning(f"({i}/{total}) Failed for job {job_id}: {e}")
+
+        self._run_jobs(process, list(enumerate(jobs, 1)))
 
     def _run_salary_analysis(self):
         """Run salary normalization on jobs"""
         jobs = self._get_jobs_for_salary_analysis()
+        if self.config.limit:
+            jobs = jobs[:self.config.limit]
         total = len(jobs)
 
         self.logger.info(f"Found {total} jobs for salary normalization")
 
-        for i, (job_id, pay_range) in enumerate(jobs, 1):
-            if self.config.limit and i > self.config.limit:
-                break
-
+        def process(indexed_job):
+            i, (job_id, pay_range) = indexed_job
+            if self._abort.is_set():
+                return
             try:
                 self.logger.info(f"({i}/{total}) Normalizing salary for job {job_id}: {pay_range}")
 
                 result = self._salary_normalizer.normalize_salary(job_id, pay_range)
                 if result and (result[0] > 0 or result[1] > 0):
-                    self.stats['salary_normalized'] += 1
+                    self._bump('salary_normalized')
                     self.logger.info(f"({i}/{total}) Success: {result}")
                 else:
-                    self.stats['salary_skipped'] += 1
+                    self._bump('salary_skipped')
+            except self._exhausted_error as e:
+                self._trip_abort(e)
             except Exception as e:
-                self.stats['salary_failed'] += 1
+                self._bump('salary_failed')
                 self.logger.warning(f"({i}/{total}) Salary normalization failed for job {job_id}: {e}")
+
+        self._run_jobs(process, list(enumerate(jobs, 1)))
+
+    def _run_jobs(self, process, indexed_jobs):
+        """Run a process callable over jobs, serially or concurrently per config.workers"""
+        workers = max(1, self.config.workers)
+        if workers == 1:
+            for item in indexed_jobs:
+                if self._abort.is_set():
+                    break
+                process(item)
+            return
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(process, item) for item in indexed_jobs]
+            for future in as_completed(futures):
+                # process() handles its own exceptions; surface unexpected ones
+                exc = future.exception()
+                if exc:
+                    self.logger.error(f"Worker crashed: {exc}")
 
     def _get_jobs_for_tech_analysis(self) -> List[Tuple[int, str]]:
         """Get jobs that need tech stack analysis"""

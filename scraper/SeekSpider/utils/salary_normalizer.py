@@ -6,7 +6,7 @@ from datetime import datetime
 # Add parent directory to path for relative imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.ai_client import AIClient
+from core.ai_client import AIClient, AIKeysExhaustedError
 from core.config import config
 from core.database import DatabaseManager
 from core.logger import Logger
@@ -132,6 +132,8 @@ class SalaryNormalizer:
 
             return salary_range
 
+        except AIKeysExhaustedError:
+            raise  # Out of balance: let the caller stop the run
         except Exception as e:
             self.logger.error(f"Error normalizing salary for job {job_id}: {str(e)}")
             return [0, 0]
@@ -200,6 +202,9 @@ class SalaryNormalizer:
                             'pay_range': pay_range,
                             'result': 'Zero salary range'
                         })
+                except AIKeysExhaustedError as e:
+                    self.logger.error(f"Stopping salary normalization: {e}. Top up the AI account balance.")
+                    break
                 except Exception as e:
                     self.logger.error(f"Failed to process job {job_id}: {str(e)}")
                     errors += 1

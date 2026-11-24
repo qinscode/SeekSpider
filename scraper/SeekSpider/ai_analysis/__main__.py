@@ -83,6 +83,8 @@ Examples:
                         help='Maximum number of jobs to process')
     parser.add_argument('--include-existing', action='store_true',
                         help='Re-analyze jobs that already have analysis')
+    parser.add_argument('--workers', type=int, default=1,
+                        help='Number of concurrent worker threads (default: 1 = serial)')
 
     return parser.parse_args()
 
@@ -111,11 +113,12 @@ def main():
         region_filter=args.region_filter,
         region=args.region,
         only_missing=not args.include_existing,
+        workers=args.workers,
     )
 
     logger.info(f"Arguments: type={args.type}, region={args.region}, "
                 f"region_filter={args.region_filter}, limit={args.limit}, "
-                f"include_existing={args.include_existing}")
+                f"include_existing={args.include_existing}, workers={args.workers}")
 
     # Run analysis
     analyzer = AIAnalyzer(config, logger)

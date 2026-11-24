@@ -2,7 +2,7 @@
 AI Client with multi-key support and automatic rotation.
 
 Features:
-- Automatic key rotation on 403 (insufficient balance)
+- Automatic key rotation on 402/403 (insufficient balance)
 - Automatic key rotation on 429 (rate limit)
 - Auto-reset exhausted keys after cooldown period
 - Logging for key rotation events
@@ -13,6 +13,18 @@ import logging
 import time
 import requests
 from datetime import datetime, timedelta
+
+
+# Status codes that mean "this key has no balance left". SiliconFlow returns
+# 402 (code 30001 "account balance is insufficient"); some providers use 403.
+BALANCE_EXHAUSTED_STATUSES = frozenset({402, 403})
+
+
+class AIKeysExhaustedError(Exception):
+    """Every API key is out of balance. Callers should stop the run, not skip the job."""
+
+    def __init__(self, message: str = "All API keys are exhausted (insufficient balance)"):
+        super().__init__(message)
 
 
 class AIClient:
@@ -251,8 +263,8 @@ class AIClient:
                     exhausted_rotation_start_key = None
                     return response.json()['choices'][0]['message']['content']
 
-                # Handle 403 - insufficient balance, mark key as exhausted
-                if response.status_code == 403:
+                # Handle 402/403 - insufficient balance, mark key as exhausted
+                if response.status_code in BALANCE_EXHAUSTED_STATUSES:
                     self.key_stats[current_key]['errors'] += 1
                     self._mark_key_exhausted(current_key)
 
@@ -274,7 +286,7 @@ class AIClient:
                             exhausted_rotation_start_key = None  # Reset for next round
                             continue
                         else:
-                            raise Exception("All API keys are exhausted (insufficient balance)")
+                            raise AIKeysExhaustedError()
                     else:
                         # Still have keys to try in this rotation
                         self.logger.info(
@@ -347,9 +359,9 @@ class AIClient:
                     continue
                 raise
 
+            except AIKeysExhaustedError:
+                raise
             except Exception as e:
-                if "exhausted" in str(e).lower():
-                    raise  # Re-raise exhaustion errors
                 self.key_stats[current_key]['errors'] += 1
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
