@@ -246,7 +246,7 @@ class AIClient:
                     ],
                     "stream": False,
                     "response_format": {"type": "text"},
-                    "temperature": 1.3
+                    "temperature": self.config.AI_TEMPERATURE
                 }
 
                 response = requests.post(

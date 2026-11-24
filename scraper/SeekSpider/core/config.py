@@ -22,6 +22,8 @@ class Config:
         self.AI_API_KEYS = [k.strip() for k in ai_keys.split(',') if k.strip()]
         self.AI_API_URL = os.getenv('AI_API_URL')
         self.AI_MODEL = os.getenv('AI_MODEL')
+        # Low temperature keeps extraction (tech stack / salary) deterministic
+        self.AI_TEMPERATURE = float(os.getenv('AI_TEMPERATURE', '0.2'))
 
     def validate(self):
         """Validate required configuration fields"""
