@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -10,6 +11,49 @@ from core.ai_client import AIClient, AIKeysExhaustedError
 from core.config import config
 from core.database import DatabaseManager
 from core.logger import Logger
+
+
+HOURLY_FACTOR = 1976  # 7.6h x 5d x 52w
+DAILY_FACTOR = 260    # 5d x 52w
+
+_HOURLY_RE = re.compile(r'per\s*hour|/\s*h(?:ou)?r\b|\bp\.?\s?h\.?(?=\s|$|[,;)+])|\bhourly\b', re.I)
+_DAILY_RE = re.compile(r'per\s*day|/\s*day\b|\bp\.?\s?d\.?(?=\s|$|[,;)+])|\bdaily\b|\ba\s+day\b', re.I)
+# Anything that makes the text ambiguous: annual/weekly/monthly figures, "k" amounts, alternatives
+_AMBIGUOUS_RE = re.compile(
+    r'\bOR\b|\d\s*k\b|\bp\.?a\.?\b|per\s*(?:annum|year|week|month|fortnight)|annual|salary|package|pkg|\bweek|\bmonth',
+    re.I,
+)
+
+
+def rule_based_salary(pay_range):
+    """
+    Deterministic annualisation for unambiguous hourly/daily PayRange text.
+
+    Returns [min, max] (annual AUD) or None when the text is not a clear
+    hourly-only / daily-only figure. Used to cross-check the AI result:
+    LLMs occasionally apply the wrong multiplier (e.g. x520 for a day rate).
+    """
+    if not pay_range:
+        return None
+    text = str(pay_range)
+    if _AMBIGUOUS_RE.search(text):
+        return None
+    hourly = bool(_HOURLY_RE.search(text))
+    daily = bool(_DAILY_RE.search(text))
+    if hourly == daily:  # neither, or both (e.g. "$200/hr, 7.5 hours per day")
+        return None
+
+    cleaned = re.sub(r'\d+(?:\.\d+)?\s*%', ' ', text)                              # 12% super
+    cleaned = re.sub(r'\d+(?:\.\d+)?\s*(?:hours?|hrs?|days?|months?|weeks?|years?)\b', ' ', cleaned, flags=re.I)
+    nums = [float(n.replace(',', '')) for n in re.findall(r'\d[\d,]*(?:\.\d+)?', cleaned)]
+    factor = HOURLY_FACTOR if hourly else DAILY_FACTOR
+    lo, hi = (10, 1000) if hourly else (50, 5000)
+    # Drop numbers that cannot be a rate (e.g. the "12" in "12M Contract")
+    nums = [n for n in nums if lo <= n <= hi]
+    if len(nums) not in (1, 2):
+        return None
+    low, high = min(nums), max(nums)
+    return [int(round(low * factor)), int(round(high * factor))]
 
 
 class SalaryNormalizer:
@@ -90,6 +134,10 @@ class SalaryNormalizer:
             self.logger.error(f"Error parsing salary range: {str(e)}")
             return [0, 0]
 
+    @staticmethod
+    def _close(a, b, tol: float = 0.01):
+        return all(abs(x - y) <= max(1, tol * y) for x, y in zip(a, b))
+
     def normalize_salary(self, job_id, pay_range):
         """Normalize a single job's salary range"""
         try:
@@ -112,6 +160,15 @@ class SalaryNormalizer:
 
             # Parse salary range
             salary_range = self._parse_salary_range(response)
+
+            # Cross-check against the deterministic rule for clear hourly/daily rates
+            rule_range = rule_based_salary(pay_range)
+            if rule_range and not self._close(salary_range, rule_range):
+                self.logger.warning(
+                    f"AI salary {salary_range} disagrees with rule {rule_range} for job {job_id} "
+                    f"(pay_range={self._truncate_text(pay_range)}); using rule-based value"
+                )
+                salary_range = rule_range
 
             # Only update database if we have valid salary (at least one non-zero value)
             if salary_range[0] <= 0 and salary_range[1] <= 0:
